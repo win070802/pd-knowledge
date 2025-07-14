@@ -1,4 +1,3 @@
-const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
@@ -10,6 +9,7 @@ const pdfParse = require('pdf-parse');
 const { initializeDatabase, db } = require('./database');
 const geminiService = require('./gemini');
 const ocrService = require('./ocr-service');
+const storageService = require('./storage-service');
 require('dotenv').config();
 
 const app = express();
@@ -139,13 +139,16 @@ app.post('/api/upload', upload.single('document'), async (req, res) => {
       return res.status(400).json({ success: false, error: 'No file uploaded' });
     }
 
-    const filePath = req.file.path;
+    const tempFilePath = req.file.path;
     const fileName = req.file.filename;
     const originalName = req.file.originalname;
     const fileSize = req.file.size;
 
     // Extract text from PDF (with OCR support for scanned PDFs)
-    const contentText = await extractTextFromPDF(filePath);
+    const contentText = await extractTextFromPDF(tempFilePath);
+
+    // Upload to storage (cloud or local)
+    const storageResult = await storageService.uploadFile(tempFilePath, fileName);
 
     // Determine processing method
     const isScanned = ocrService.isScannedPDF(contentText);
@@ -155,21 +158,26 @@ app.post('/api/upload', upload.single('document'), async (req, res) => {
     const document = await db.createDocument({
       filename: fileName,
       originalName: originalName,
-      filePath: filePath,
+      filePath: storageResult.path,
       fileSize: fileSize,
       content: contentText,
       metadata: {
         uploadedAt: new Date().toISOString(),
         contentLength: contentText.length,
         processingMethod: processingMethod,
-        isScanned: isScanned
+        isScanned: isScanned,
+        storageType: storageResult.storage,
+        storageUrl: storageResult.url
       }
     });
 
     // Mark as processed
     await db.updateDocumentProcessed(document.id, true);
 
-    // Clean up OCR temp files
+    // Clean up temp file and OCR files
+    if (fs.existsSync(tempFilePath)) {
+      fs.unlinkSync(tempFilePath);
+    }
     ocrService.cleanup();
 
     res.json({
@@ -186,6 +194,8 @@ app.post('/api/upload', upload.single('document'), async (req, res) => {
         processed: document.processed,
         processingMethod: processingMethod,
         isScanned: isScanned,
+        storageType: storageResult.storage,
+        storageUrl: storageResult.url,
         metadata: document.metadata
       }
     });
