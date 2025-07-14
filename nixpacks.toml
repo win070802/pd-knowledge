@@ -6,11 +6,5 @@ dependsOn = ["setup"]
 
 [variables]
 NIXPACKS_METADATA = "pdf-knowledge-system"
-
-# ImageMagick configuration
-[variables.MAGICK_CONFIGURE_PATH]
-value = "/nix/store"
-
-# Tesseract configuration  
-[variables.TESSDATA_PREFIX]
-value = "/app" 
+MAGICK_CONFIGURE_PATH = "/nix/store"
+TESSDATA_PREFIX = "/app" 
