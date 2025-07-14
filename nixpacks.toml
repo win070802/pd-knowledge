@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["imagemagick", "tesseract", "tesseract-languages"]
+nixPkgs = ["imagemagick", "tesseract"]
 
 [phases.install]
 dependsOn = ["setup"]
