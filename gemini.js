@@ -1,11 +1,135 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { db } = require('./database');
+const fs = require('fs');
+const path = require('path');
 require('dotenv').config();
 
 class GeminiService {
   constructor() {
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    this.constraints = this.loadConstraints();
+  }
+
+  // Load constraints from JSON file
+  loadConstraints() {
+    try {
+      const constraintsPath = path.join(__dirname, 'constraints.json');
+      if (fs.existsSync(constraintsPath)) {
+        const data = fs.readFileSync(constraintsPath, 'utf8');
+        return JSON.parse(data);
+      }
+      return {};
+    } catch (error) {
+      console.error('Error loading constraints:', error);
+      return {};
+    }
+  }
+
+  // Check if question matches any constraint
+  checkConstraints(question) {
+    if (!this.constraints || !this.constraints.commonQuestions) {
+      return null;
+    }
+
+    const questionLower = question.toLowerCase().trim();
+    
+    // Direct match with common questions
+    for (const [constraintQuestion, answer] of Object.entries(this.constraints.commonQuestions)) {
+      if (questionLower === constraintQuestion.toLowerCase()) {
+        return answer;
+      }
+    }
+
+    // Fuzzy match for similar questions
+    const questionWords = questionLower.split(/\s+/);
+    
+    for (const [constraintQuestion, answer] of Object.entries(this.constraints.commonQuestions)) {
+      const constraintWords = constraintQuestion.toLowerCase().split(/\s+/);
+      
+      // Check if most important words match
+      let matchCount = 0;
+      for (const word of questionWords) {
+        if (word.length > 2 && constraintWords.includes(word)) {
+          matchCount++;
+        }
+      }
+      
+      // If enough words match, consider it a match
+      if (matchCount >= Math.min(2, questionWords.length - 1)) {
+        return answer;
+      }
+    }
+
+    // Check for company keywords
+    if (this.constraints.companies) {
+      for (const [companyCode, companyInfo] of Object.entries(this.constraints.companies)) {
+        if (companyInfo.keywords) {
+          for (const keyword of companyInfo.keywords) {
+            if (questionLower.includes(keyword.toLowerCase())) {
+              // If question is about the company, return company description
+              if (questionLower.includes('là gì') || questionLower.includes('là công ty gì') || 
+                  questionLower.includes('what') || questionLower.includes('company')) {
+                return companyInfo.description;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  // Add or update constraint
+  addConstraint(question, answer) {
+    try {
+      if (!this.constraints.commonQuestions) {
+        this.constraints.commonQuestions = {};
+      }
+      
+      this.constraints.commonQuestions[question] = answer;
+      
+      // Save to file
+      const constraintsPath = path.join(__dirname, 'constraints.json');
+      fs.writeFileSync(constraintsPath, JSON.stringify(this.constraints, null, 2), 'utf8');
+      
+      console.log(`✅ Added constraint: "${question}" -> "${answer}"`);
+      return true;
+    } catch (error) {
+      console.error('Error adding constraint:', error);
+      return false;
+    }
+  }
+
+  // Remove constraint
+  removeConstraint(question) {
+    try {
+      if (!this.constraints.commonQuestions) {
+        return false;
+      }
+      
+      if (this.constraints.commonQuestions[question]) {
+        delete this.constraints.commonQuestions[question];
+        
+        // Save to file
+        const constraintsPath = path.join(__dirname, 'constraints.json');
+        fs.writeFileSync(constraintsPath, JSON.stringify(this.constraints, null, 2), 'utf8');
+        
+        console.log(`✅ Removed constraint: "${question}"`);
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error removing constraint:', error);
+      return false;
+    }
+  }
+
+  // Get all constraints
+  getConstraints() {
+    return this.constraints;
   }
 
   // Split text into chunks for better processing
@@ -33,9 +157,16 @@ class GeminiService {
     return chunks;
   }
 
-  // Find relevant documents based on question
+  // Find relevant documents and knowledge base entries
   async findRelevantDocuments(question, limit = 5) {
     try {
+      // First check knowledge base for direct answers
+      const knowledgeResults = await this.searchKnowledgeBase(question);
+      if (knowledgeResults.length > 0) {
+        console.log(`📚 Found ${knowledgeResults.length} knowledge base entries`);
+        return knowledgeResults.slice(0, limit);
+      }
+
       // Simple keyword search - can be improved with vector search
       const keywords = question.toLowerCase().split(/\s+/)
         .filter(word => word.length > 2)
@@ -69,6 +200,54 @@ class GeminiService {
     }
   }
 
+  // Search knowledge base for relevant entries
+  async searchKnowledgeBase(question) {
+    try {
+      const keywords = question.toLowerCase().split(/\s+/)
+        .filter(word => word.length > 2)
+        .slice(0, 5);
+      
+      let allResults = [];
+      
+      // Search each keyword
+      for (const keyword of keywords) {
+        const results = await db.searchKnowledge(keyword);
+        allResults = allResults.concat(results);
+      }
+      
+      // Remove duplicates and calculate relevance
+      const uniqueResults = [];
+      const seenIds = new Set();
+      
+      for (const result of allResults) {
+        if (!seenIds.has(result.id)) {
+          seenIds.add(result.id);
+          
+          // Calculate relevance score
+          let relevanceScore = 0;
+          const content = (result.question + ' ' + result.answer).toLowerCase();
+          
+          for (const keyword of keywords) {
+            const matches = (content.match(new RegExp(keyword, 'g')) || []).length;
+            relevanceScore += matches;
+          }
+          
+          uniqueResults.push({
+            ...result,
+            relevanceScore,
+            isKnowledgeBase: true
+          });
+        }
+      }
+      
+      return uniqueResults
+        .sort((a, b) => b.relevanceScore - a.relevanceScore);
+    } catch (error) {
+      console.error('Error searching knowledge base:', error);
+      return [];
+    }
+  }
+
   // Generate context from relevant documents
   generateContext(documents) {
     let context = '';
@@ -83,22 +262,34 @@ class GeminiService {
     return context;
   }
 
-  // Content policy - check for inappropriate content
-  isSensitiveContent(question) {
-    const sensitivePatterns = [
-      // Sexual content
-      /sex|tình dục|làm tình|quan hệ|khiêu dâm|porn|xxx|nude|nóng bỏng|gợi cảm/i,
-      // Violence/weapons
-      /súng|đạn|vũ khí|giết|chết|bạo lực|đánh nhau|weapon|gun|kill|violence|bomb|nổ|ma túy|drug/i,
-      // Hate speech
-      /chửi|mắng|ghét|khinh|phân biệt|racist|hate/i,
-      // Illegal activities
-      /hack|lừa đảo|scam|cheat|gian lận|bất hợp pháp|illegal/i,
-      // Gambling
-      /cờ bạc|gambling|bet|cược|casino/i
-    ];
-    
-    return sensitivePatterns.some(pattern => pattern.test(question.trim()));
+  // Content policy - check for inappropriate content using database rules
+  async isSensitiveContent(question) {
+    try {
+      const rules = await db.getSensitiveRules(true); // Get only active rules
+      
+      for (const rule of rules) {
+        try {
+          const pattern = new RegExp(rule.pattern, 'i');
+          if (pattern.test(question.trim())) {
+            console.log(`🚫 Sensitive content detected by rule: ${rule.rule_name}`);
+            return true;
+          }
+        } catch (error) {
+          console.error(`Error in regex pattern for rule ${rule.rule_name}:`, error);
+        }
+      }
+      
+      return false;
+    } catch (error) {
+      console.error('Error checking sensitive content:', error);
+      // Fallback to basic patterns if database fails
+      const basicPatterns = [
+        /sex|tình dục|làm tình|quan hệ|khiêu dâm|porn|xxx|nude/i,
+        /súng|đạn|vũ khí|giết|chết|bạo lực|weapon|gun|kill|violence|bomb/i,
+        /hack|lừa đảo|scam|cheat|gian lận|illegal/i
+      ];
+      return basicPatterns.some(pattern => pattern.test(question.trim()));
+    }
   }
 
   // Check if question is asking for specific document information
@@ -187,7 +378,7 @@ class GeminiService {
       console.log(`\n🔍 Processing question: "${question}"`);
       
       // Check for sensitive content first
-      const isSensitive = this.isSensitiveContent(question);
+      const isSensitive = await this.isSensitiveContent(question);
       console.log(`🛡️ Sensitive content check: ${isSensitive}`);
       
       if (isSensitive) {
@@ -205,6 +396,30 @@ class GeminiService {
         
         return {
           answer,
+          documentIds: [],
+          relevantDocuments: [],
+          responseTime
+        };
+      }
+
+      // Check constraints first (highest priority)
+      const constraintAnswer = this.checkConstraints(question);
+      console.log(`🔒 Constraint check: ${constraintAnswer ? 'Found match' : 'No match'}`);
+      
+      if (constraintAnswer) {
+        console.log(`✅ Using constraint answer`);
+        const responseTime = Date.now() - startTime;
+        
+        // Save to database
+        await db.createQuestion({
+          question,
+          answer: constraintAnswer,
+          documentIds: [],
+          responseTime
+        });
+        
+        return {
+          answer: constraintAnswer,
           documentIds: [],
           relevantDocuments: [],
           responseTime
@@ -328,10 +543,6 @@ TRÁLỜI:`;
       // Fallback response for common questions
       if (question.toLowerCase().includes('việt nam') && question.toLowerCase().includes('tỉnh')) {
         return 'Việt Nam có 63 tỉnh thành phố, bao gồm 58 tỉnh và 5 thành phố trực thuộc trung ương (Hà Nội, TP.HCM, Đà Nẵng, Hải Phòng, Cần Thơ).';
-      }
-      
-      if (question.toLowerCase().includes('phát đạt')) {
-        return 'Tôi cần thêm thông tin để có thể trả lời chính xác về công ty Phát Đạt. Đây có thể là tên của nhiều công ty khác nhau. Bạn có thể cung cấp thêm context hoặc upload tài liệu về công ty này để tôi có thể trả lời chính xác hơn?';
       }
       
       return 'Xin lỗi, tôi đang gặp vấn đề kỹ thuật với API. Vui lòng thử lại sau hoặc đặt câu hỏi khác.';

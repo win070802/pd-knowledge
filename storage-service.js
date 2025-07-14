@@ -1,6 +1,7 @@
 const { Storage } = require('@google-cloud/storage');
 const fs = require('fs');
 const path = require('path');
+const { db } = require('./database');
 
 class StorageService {
   constructor() {
@@ -50,23 +51,99 @@ class StorageService {
     }
   }
 
-  async uploadFile(filePath, fileName) {
-    if (this.useCloudStorage) {
-      return await this.uploadToCloud(filePath, fileName);
-    } else {
-      return await this.uploadToLocal(filePath, fileName);
+  // Auto-detect company from filename or content
+  async detectCompanyFromFile(fileName, content = null) {
+    try {
+      const companies = await db.getCompanies();
+      
+      // Check filename for company codes
+      const fileNameLower = fileName.toLowerCase();
+      for (const company of companies) {
+        if (fileNameLower.includes(company.code.toLowerCase())) {
+          return company;
+        }
+        // Check keywords
+        if (company.keywords) {
+          for (const keyword of company.keywords) {
+            if (fileNameLower.includes(keyword.toLowerCase())) {
+              return company;
+            }
+          }
+        }
+      }
+
+      // Check content if provided
+      if (content) {
+        const contentLower = content.toLowerCase();
+        for (const company of companies) {
+          if (contentLower.includes(company.code.toLowerCase()) || 
+              contentLower.includes(company.full_name.toLowerCase())) {
+            return company;
+          }
+          // Check keywords in content
+          if (company.keywords) {
+            for (const keyword of company.keywords) {
+              if (contentLower.includes(keyword.toLowerCase())) {
+                return company;
+              }
+            }
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error detecting company:', error);
+      return null;
     }
   }
 
-  async uploadToCloud(filePath, fileName) {
+  async uploadFile(filePath, fileName, companyCode = null) {
+    let company = null;
+    
+    // If company code provided, get company info
+    if (companyCode) {
+      company = await db.getCompanyByCode(companyCode.toUpperCase());
+    }
+    
+    // If no company specified, try to auto-detect
+    if (!company) {
+      company = await this.detectCompanyFromFile(fileName);
+    }
+
+    if (this.useCloudStorage) {
+      return await this.uploadToCloud(filePath, fileName, company);
+    } else {
+      return await this.uploadToLocal(filePath, fileName, company);
+    }
+  }
+
+  async uploadFileByCompany(filePath, fileName, companyCode) {
+    return await this.uploadFile(filePath, fileName, companyCode);
+  }
+
+  async uploadToCloud(filePath, fileName, company = null) {
     try {
       console.log(`☁️ Uploading to cloud: ${fileName}`);
-      const destination = `uploads/${fileName}`;
+      
+      // Organize by company folder
+      let destination;
+      if (company) {
+        destination = `uploads/${company.code}/${fileName}`;
+        console.log(`📁 Organizing into company folder: ${company.code}`);
+      } else {
+        destination = `uploads/general/${fileName}`;
+        console.log(`📁 No company detected, using general folder`);
+      }
       
       await this.bucket.upload(filePath, {
         destination: destination,
         metadata: {
-          contentType: 'application/pdf'
+          contentType: 'application/pdf',
+          customMetadata: {
+            companyCode: company ? company.code : 'general',
+            companyName: company ? company.full_name : 'General'
+          }
         }
       });
       
@@ -81,7 +158,8 @@ class StorageService {
       return {
         url: url,
         path: destination,
-        storage: 'cloud'
+        storage: 'cloud',
+        company: company
       };
     } catch (error) {
       console.error('❌ Error uploading to cloud:', error);
@@ -89,10 +167,20 @@ class StorageService {
     }
   }
 
-  async uploadToLocal(filePath, fileName) {
+  async uploadToLocal(filePath, fileName, company = null) {
     try {
-      console.log(`�� Uploading to local: ${fileName}`);
-      const uploadDir = './uploads';
+      console.log(`💾 Uploading to local: ${fileName}`);
+      
+      // Organize by company folder
+      let uploadDir;
+      if (company) {
+        uploadDir = `./uploads/${company.code}`;
+        console.log(`📁 Organizing into company folder: ${company.code}`);
+      } else {
+        uploadDir = './uploads/general';
+        console.log(`📁 No company detected, using general folder`);
+      }
+      
       if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });
       }
@@ -104,7 +192,8 @@ class StorageService {
       return {
         url: null,
         path: destination,
-        storage: 'local'
+        storage: 'local',
+        company: company
       };
     } catch (error) {
       console.error('❌ Error uploading to local:', error);

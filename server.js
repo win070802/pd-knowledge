@@ -322,6 +322,429 @@ app.delete('/api/documents/:id', async (req, res) => {
   }
 });
 
+// Constraint Management Endpoints
+
+// Get all constraints
+app.get('/api/constraints', async (req, res) => {
+  try {
+    const constraints = geminiService.getConstraints();
+    res.json({ success: true, data: constraints });
+  } catch (error) {
+    console.error('Error getting constraints:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Add or update constraint
+app.post('/api/constraints', async (req, res) => {
+  try {
+    const { question, answer } = req.body;
+    
+    if (!question || !answer) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Question and answer are required' 
+      });
+    }
+
+    const success = geminiService.addConstraint(question, answer);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: 'Constraint added successfully',
+        data: { question, answer }
+      });
+    } else {
+      res.status(500).json({ 
+        success: false, 
+        error: 'Failed to add constraint' 
+      });
+    }
+  } catch (error) {
+    console.error('Error adding constraint:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete constraint
+app.delete('/api/constraints', async (req, res) => {
+  try {
+    const { question } = req.body;
+    
+    if (!question) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Question is required' 
+      });
+    }
+
+    const success = geminiService.removeConstraint(question);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: 'Constraint removed successfully',
+        data: { question }
+      });
+    } else {
+      res.status(404).json({ 
+        success: false, 
+        error: 'Constraint not found' 
+      });
+    }
+  } catch (error) {
+    console.error('Error removing constraint:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Company Management Endpoints
+
+// Get all companies
+app.get('/api/companies', async (req, res) => {
+  try {
+    const companies = await db.getCompanies();
+    res.json({ success: true, data: companies });
+  } catch (error) {
+    console.error('Error getting companies:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get company by code
+app.get('/api/companies/:code', async (req, res) => {
+  try {
+    const company = await db.getCompanyByCode(req.params.code.toUpperCase());
+    if (!company) {
+      return res.status(404).json({ success: false, error: 'Company not found' });
+    }
+    res.json({ success: true, data: company });
+  } catch (error) {
+    console.error('Error getting company:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Create company
+app.post('/api/companies', async (req, res) => {
+  try {
+    const { code, fullName, parentGroup, chairman, ceo, description, keywords } = req.body;
+    
+    if (!code || !fullName) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Code and full name are required' 
+      });
+    }
+
+    const company = await db.createCompany({
+      code: code.toUpperCase(),
+      fullName,
+      parentGroup,
+      chairman,
+      ceo,
+      description,
+      keywords
+    });
+    
+    res.status(201).json({ 
+      success: true, 
+      message: 'Company created successfully',
+      data: company
+    });
+  } catch (error) {
+    console.error('Error creating company:', error);
+    if (error.code === '23505') { // Unique constraint violation
+      res.status(400).json({ success: false, error: 'Company code already exists' });
+    } else {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+});
+
+// Update company
+app.put('/api/companies/:id', async (req, res) => {
+  try {
+    const { fullName, parentGroup, chairman, ceo, description, keywords } = req.body;
+    
+    const company = await db.updateCompany(req.params.id, {
+      fullName,
+      parentGroup,
+      chairman,
+      ceo,
+      description,
+      keywords
+    });
+    
+    if (!company) {
+      return res.status(404).json({ success: false, error: 'Company not found' });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Company updated successfully',
+      data: company
+    });
+  } catch (error) {
+    console.error('Error updating company:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete company
+app.delete('/api/companies/:id', async (req, res) => {
+  try {
+    const success = await db.deleteCompany(req.params.id);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: 'Company deleted successfully'
+      });
+    } else {
+      res.status(404).json({ 
+        success: false, 
+        error: 'Company not found' 
+      });
+    }
+  } catch (error) {
+    console.error('Error deleting company:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Sensitive Rules Management Endpoints
+
+// Get all sensitive rules
+app.get('/api/sensitive-rules', async (req, res) => {
+  try {
+    const activeOnly = req.query.active !== 'false';
+    const rules = await db.getSensitiveRules(activeOnly);
+    res.json({ success: true, data: rules });
+  } catch (error) {
+    console.error('Error getting sensitive rules:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Create sensitive rule
+app.post('/api/sensitive-rules', async (req, res) => {
+  try {
+    const { ruleName, pattern, description, isActive = true } = req.body;
+    
+    if (!ruleName || !pattern) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Rule name and pattern are required' 
+      });
+    }
+
+    // Test regex pattern
+    try {
+      new RegExp(pattern, 'i');
+    } catch (regexError) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Invalid regex pattern' 
+      });
+    }
+
+    const rule = await db.createSensitiveRule({
+      ruleName,
+      pattern,
+      description,
+      isActive
+    });
+    
+    res.status(201).json({ 
+      success: true, 
+      message: 'Sensitive rule created successfully',
+      data: rule
+    });
+  } catch (error) {
+    console.error('Error creating sensitive rule:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update sensitive rule
+app.put('/api/sensitive-rules/:id', async (req, res) => {
+  try {
+    const { ruleName, pattern, description, isActive } = req.body;
+    
+    // Test regex pattern if provided
+    if (pattern) {
+      try {
+        new RegExp(pattern, 'i');
+      } catch (regexError) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Invalid regex pattern' 
+        });
+      }
+    }
+
+    const rule = await db.updateSensitiveRule(req.params.id, {
+      ruleName,
+      pattern,
+      description,
+      isActive
+    });
+    
+    if (!rule) {
+      return res.status(404).json({ success: false, error: 'Rule not found' });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Sensitive rule updated successfully',
+      data: rule
+    });
+  } catch (error) {
+    console.error('Error updating sensitive rule:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete sensitive rule
+app.delete('/api/sensitive-rules/:id', async (req, res) => {
+  try {
+    const success = await db.deleteSensitiveRule(req.params.id);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: 'Sensitive rule deleted successfully'
+      });
+    } else {
+      res.status(404).json({ 
+        success: false, 
+        error: 'Rule not found' 
+      });
+    }
+  } catch (error) {
+    console.error('Error deleting sensitive rule:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Knowledge Base Management Endpoints
+
+// Get knowledge entries by company
+app.get('/api/knowledge/company/:companyId', async (req, res) => {
+  try {
+    const activeOnly = req.query.active !== 'false';
+    const knowledge = await db.getKnowledgeByCompany(req.params.companyId, activeOnly);
+    res.json({ success: true, data: knowledge });
+  } catch (error) {
+    console.error('Error getting knowledge by company:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Search knowledge base
+app.get('/api/knowledge/search', async (req, res) => {
+  try {
+    const { q: searchTerm, company_id: companyId } = req.query;
+    
+    if (!searchTerm) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Search term is required' 
+      });
+    }
+
+    const knowledge = await db.searchKnowledge(searchTerm, companyId);
+    res.json({ success: true, data: knowledge });
+  } catch (error) {
+    console.error('Error searching knowledge:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Create knowledge entry
+app.post('/api/knowledge', async (req, res) => {
+  try {
+    const { companyId, question, answer, keywords, category, isActive = true } = req.body;
+    
+    if (!question || !answer) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Question and answer are required' 
+      });
+    }
+
+    const knowledge = await db.createKnowledge({
+      companyId,
+      question,
+      answer,
+      keywords,
+      category,
+      isActive
+    });
+    
+    res.status(201).json({ 
+      success: true, 
+      message: 'Knowledge entry created successfully',
+      data: knowledge
+    });
+  } catch (error) {
+    console.error('Error creating knowledge:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Update knowledge entry
+app.put('/api/knowledge/:id', async (req, res) => {
+  try {
+    const { question, answer, keywords, category, isActive } = req.body;
+
+    const knowledge = await db.updateKnowledge(req.params.id, {
+      question,
+      answer,
+      keywords,
+      category,
+      isActive
+    });
+    
+    if (!knowledge) {
+      return res.status(404).json({ success: false, error: 'Knowledge entry not found' });
+    }
+    
+    res.json({ 
+      success: true, 
+      message: 'Knowledge entry updated successfully',
+      data: knowledge
+    });
+  } catch (error) {
+    console.error('Error updating knowledge:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Delete knowledge entry
+app.delete('/api/knowledge/:id', async (req, res) => {
+  try {
+    const success = await db.deleteKnowledge(req.params.id);
+    
+    if (success) {
+      res.json({ 
+        success: true, 
+        message: 'Knowledge entry deleted successfully'
+      });
+    } else {
+      res.status(404).json({ 
+        success: false, 
+        error: 'Knowledge entry not found' 
+      });
+    }
+  } catch (error) {
+    console.error('Error deleting knowledge:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Error handling middleware
 app.use((error, req, res, next) => {
   console.error('Unhandled error:', error);
