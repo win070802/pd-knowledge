@@ -1,0 +1,16 @@
+[phases.setup]
+nixPkgs = ["imagemagick", "tesseract", "tesseract-languages"]
+
+[phases.install]
+dependsOn = ["setup"]
+
+[variables]
+NIXPACKS_METADATA = "pdf-knowledge-system"
+
+# ImageMagick configuration
+[variables.MAGICK_CONFIGURE_PATH]
+value = "/nix/store"
+
+# Tesseract configuration  
+[variables.TESSDATA_PREFIX]
+value = "/app" 

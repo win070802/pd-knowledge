@@ -4,8 +4,9 @@
   "description": "PDF Knowledge Management System with Gemini AI",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node setup-production.js && node server.js",
     "dev": "nodemon server.js",
+    "build": "node setup-production.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

@@ -1,0 +1,63 @@
+# Development files
+.env.example
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary directories
+temp/
+temp-images/
+uploads/test*
+
+# Documentation files (optional, remove if you want them deployed)
+*.md
+!README.md
+
+# Development scripts
+examples.sh
+install-dependencies.sh
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test files
+test/
+*.test.js
+
+# Local service account (using env variable instead)
+service-account-key.json
+
+# Git
+.git/
+.gitignore
+
+# Node.js
+node_modules/
+.npm
+.node_repl_history
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity 
