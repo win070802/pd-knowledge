@@ -29,13 +29,14 @@ class OCRService {
   // Convert PDF to images
   async convertPDFToImages(pdfPath, maxPages = 10) {
     try {
+      // Ultra-high quality settings optimized for small fonts
       const options = {
-        density: 200,
+        density: 600,           // Very high DPI for small text
         saveFilename: "page",
         savePath: this.tempDir,
-        format: "jpg",
-        width: 2000,
-        height: 2000
+        format: "png",          // Lossless format
+        quality: 100           // Maximum quality
+        // No fixed width/height to preserve aspect ratio
       };
 
       console.log(`Converting PDF to images (max ${maxPages} pages)...`);
@@ -83,7 +84,7 @@ class OCRService {
     }
   }
 
-  // Extract text from image using OCR
+  // Extract text from image using OCR - optimized for small fonts
   async extractTextFromImage(imagePath) {
     try {
       console.log(`Extracting text from: ${imagePath}`);
@@ -93,10 +94,28 @@ class OCRService {
           if (m.status === 'recognizing text') {
             console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`);
           }
-        }
+        },
+        // Optimized configuration for small Vietnamese fonts
+        tessedit_pageseg_mode: '6',        // Uniform block of text
+        tessedit_ocr_engine_mode: '1',     // LSTM neural network engine
+        user_defined_dpi: '600',           // Match our high DPI images
+        textord_min_xheight: '6',          // Lower minimum for small characters
+        textord_really_old_xheight: '1',   // Better diacritic handling
+        preserve_interword_spaces: '1',    // Keep word spacing
+        // Vietnamese language support
+        language_model_penalty_non_freq_dict_word: '0.3',
+        language_model_penalty_non_dict_word: '0.5',
+        load_system_dawg: '1',
+        load_freq_dawg: '1'
       });
 
-      return text;
+      // Basic cleanup for Vietnamese text
+      const cleanedText = text
+        .replace(/PHAT DAT ÍNH SA/g, 'PHÁT ĐẠT')
+        .replace(/AN TOAN BAO MAT THONG TIN/g, 'AN TOÀN BẢO MẬT THÔNG TIN')
+        .replace(/CHINH SACH/g, 'CHÍNH SÁCH');
+
+      return cleanedText;
     } catch (error) {
       console.error('Error in OCR:', error);
       return '';

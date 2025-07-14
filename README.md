@@ -46,17 +46,17 @@ npm install
 
 ### 3. Cấu hình môi trường
 
-Tạo file `.env` trong thư mục gốc với nội dung:
+Tạo file `.env` trong thư mục gốc với nội dung ví dụ như sau:
 
 ```env
 # Database Configuration
-DATABASE_PUBLIC_URL=postgresql://postgres:LnWEFvBOCMBNeuZrVmbABkXcAIiijgdg@nozomi.proxy.rlwy.net:53493/railway
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=LnWEFvBOCMBNeuZrVmbABkXcAIiijgdg
-PGPASSWORD=LnWEFvBOCMBNeuZrVmbABkXcAIiijgdg
+DATABASE_PUBLIC_URL=your_postgres_connection_url
+POSTGRES_USER=your_postgres_user
+POSTGRES_PASSWORD=your_postgres_password
+PGPASSWORD=your_postgres_password
 
 # Gemini AI Configuration
-GEMINI_API_KEY=AIzaSyCOWyP9vC31PVltexJUlinX-7wiU16LsJ0
+GEMINI_API_KEY=your_gemini_api_key
 
 # Server Configuration
 PORT=3000
@@ -64,8 +64,19 @@ NODE_ENV=development
 
 # Upload Configuration
 MAX_FILE_SIZE=10485760
-UPLOAD_PATH=./uploads
+
+# Google Cloud Storage Configuration
+GOOGLE_CLOUD_PROJECT_ID=your_gcp_project_id
+GOOGLE_CLOUD_KEY_FILE=./service-account-key.json         # (Chỉ dùng cho local dev)
+GOOGLE_APPLICATION_CREDENTIALS_JSON=your_service_account_json_string  # (Dùng cho production, Railway)
+GCS_BUCKET_NAME=your_gcs_bucket_name
 ```
+
+**Lưu ý:**
+- Không commit file `.env` thật lên git, chỉ dùng `.env.example` để tham khảo.
+- Nếu deploy trên Railway, chỉ cần dùng `GOOGLE_APPLICATION_CREDENTIALS_JSON` (không cần file key).
+- Nếu chạy local, dùng `GOOGLE_CLOUD_KEY_FILE` trỏ tới file key JSON đã tải về từ Google Cloud.
+- `UPLOAD_PATH` không cần thiết nếu đã dùng cloud storage.
 
 ### 4. Khởi động server
 

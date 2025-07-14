@@ -28,3 +28,5 @@ Thumbs.db
 # Build outputs
 dist/
 build/uploads/
+temp-images/
+temp/
