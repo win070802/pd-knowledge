@@ -1,0 +1,4 @@
+# Google Cloud Service Account
+service-account-key.json
+# Environment variables
+.env
