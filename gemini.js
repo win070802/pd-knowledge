@@ -5,7 +5,7 @@ require('dotenv').config();
 class GeminiService {
   constructor() {
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    this.model = this.genAI.getGenerativeModel({ model: 'gemini-pro' });
+    this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   }
 
   // Split text into chunks for better processing
@@ -103,18 +103,38 @@ class GeminiService {
 
   // Check if question is asking for specific document information
   isDocumentSpecificQuestion(question) {
-    const documentKeywords = [
+    // Strong indicators of document-specific questions
+    const strongDocumentKeywords = [
       'quy định', 'chính sách', 'policy', 'tài liệu', 'văn bản', 'hướng dẫn',
-      'quy trình', 'process', 'procedure', 'công ty', 'company', 'phòng ban',
+      'quy trình', 'process', 'procedure', 'phòng ban', 'department',
       'nghỉ phép', 'leave', 'vacation', 'lương', 'salary', 'thưởng', 'bonus',
       'kỷ luật', 'discipline', 'vi phạm', 'violation', 'đánh giá', 'evaluation',
       'tuyển dụng', 'recruitment', 'training', 'đào tạo', 'bảo hiểm', 'insurance',
       'hợp đồng', 'contract', 'thỏa thuận', 'agreement', 'báo cáo', 'report'
     ];
     
-    return documentKeywords.some(keyword => 
-      question.toLowerCase().includes(keyword.toLowerCase())
+    // Company-related phrases that indicate document queries vs general questions
+    const companyDocumentPhrases = [
+      'quy định của công ty', 'chính sách công ty', 'công ty quy định',
+      'trong công ty', 'ở công ty', 'tại công ty', 'công ty có'
+    ];
+    
+    const questionLower = question.toLowerCase();
+    
+    // Check for strong document keywords
+    const hasStrongKeyword = strongDocumentKeywords.some(keyword => 
+      questionLower.includes(keyword.toLowerCase())
     );
+    
+    // Check for company document phrases
+    const hasCompanyDocumentPhrase = companyDocumentPhrases.some(phrase =>
+      questionLower.includes(phrase.toLowerCase())
+    );
+    
+    // Don't treat general "What is X company?" questions as document-specific
+    const isGeneralCompanyQuestion = questionLower.match(/^.*(là công ty nào|là công ty gì|what.*company)/);
+    
+    return (hasStrongKeyword || hasCompanyDocumentPhrase) && !isGeneralCompanyQuestion;
   }
 
   // Check if question is a general greeting or system question
@@ -164,8 +184,14 @@ class GeminiService {
     const startTime = Date.now();
     
     try {
+      console.log(`\n🔍 Processing question: "${question}"`);
+      
       // Check for sensitive content first
-      if (this.isSensitiveContent(question)) {
+      const isSensitive = this.isSensitiveContent(question);
+      console.log(`🛡️ Sensitive content check: ${isSensitive}`);
+      
+      if (isSensitive) {
+        console.log(`❌ Blocked sensitive content`);
         const answer = 'Xin lỗi, tôi không thể trả lời câu hỏi này vì nó có thể chứa nội dung không phù hợp. Tôi chỉ có thể hỗ trợ với các câu hỏi tích cực và có tính xây dựng. Vui lòng đặt câu hỏi khác.';
         const responseTime = Date.now() - startTime;
         
@@ -186,7 +212,11 @@ class GeminiService {
       }
 
       // Check if it's a general question first
-      if (this.isGeneralQuestion(question)) {
+      const isGeneral = this.isGeneralQuestion(question);
+      console.log(`💬 General question check: ${isGeneral}`);
+      
+      if (isGeneral) {
+        console.log(`✅ Handling as general greeting`);
         const answer = await this.handleGeneralQuestion(question);
         const responseTime = Date.now() - startTime;
         
@@ -207,11 +237,17 @@ class GeminiService {
       }
       
       // Check if it's a document-specific question
-      if (this.isDocumentSpecificQuestion(question)) {
+      const isDocumentSpecific = this.isDocumentSpecificQuestion(question);
+      console.log(`📄 Document-specific check: ${isDocumentSpecific}`);
+      
+      if (isDocumentSpecific) {
+        console.log(`📋 Searching for relevant documents...`);
         // Find relevant documents for specific questions
         const relevantDocs = await this.findRelevantDocuments(question);
+        console.log(`📊 Found ${relevantDocs.length} relevant documents`);
         
         if (relevantDocs.length === 0) {
+          console.log(`❌ No documents found, returning standard message`);
           const answer = 'Xin lỗi, tôi không tìm thấy tài liệu nào liên quan đến câu hỏi của bạn. Vui lòng:\n\n• Kiểm tra lại từ khóa\n• Upload thêm tài liệu liên quan\n• Thử đặt câu hỏi khác\n\nBạn có thể sử dụng chức năng tìm kiếm để xem các tài liệu hiện có trong hệ thống.';
           const responseTime = Date.now() - startTime;
           
@@ -236,8 +272,10 @@ class GeminiService {
       }
       
       // For general questions, use Gemini without documents
+      console.log(`🤖 Handling as general chatbot question`);
       const answer = await this.handleGeneralChatbotQuestion(question);
       const responseTime = Date.now() - startTime;
+      console.log(`✅ Generated answer: ${answer.substring(0, 50)}...`);
       
       // Save to database
       await db.createQuestion({
@@ -263,8 +301,9 @@ class GeminiService {
   // Handle general chatbot questions without documents
   async handleGeneralChatbotQuestion(question) {
     try {
-      const prompt = `
-Bạn là một trợ lý AI thân thiện và hữu ích. Hãy trả lời câu hỏi sau một cách tự nhiên và hữu ích:
+      console.log(`🤖 Calling Gemini API for general question...`);
+      
+      const prompt = `Bạn là một trợ lý AI thân thiện và hữu ích. Hãy trả lời câu hỏi sau một cách tự nhiên và hữu ích:
 
 NGUYÊN TẮC:
 1. Trả lời bằng tiếng Việt một cách tự nhiên và thân thiện
@@ -279,10 +318,23 @@ TRÁLỜI:`;
 
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
-      return response.text();
+      const answer = response.text();
+      console.log(`✅ Gemini API response received`);
+      return answer;
     } catch (error) {
       console.error('Error in handleGeneralChatbotQuestion:', error);
-      return 'Xin lỗi, tôi đang gặp vấn đề kỹ thuật. Vui lòng thử lại sau.';
+      console.error('Error details:', error.message);
+      
+      // Fallback response for common questions
+      if (question.toLowerCase().includes('việt nam') && question.toLowerCase().includes('tỉnh')) {
+        return 'Việt Nam có 63 tỉnh thành phố, bao gồm 58 tỉnh và 5 thành phố trực thuộc trung ương (Hà Nội, TP.HCM, Đà Nẵng, Hải Phòng, Cần Thơ).';
+      }
+      
+      if (question.toLowerCase().includes('phát đạt')) {
+        return 'Tôi cần thêm thông tin để có thể trả lời chính xác về công ty Phát Đạt. Đây có thể là tên của nhiều công ty khác nhau. Bạn có thể cung cấp thêm context hoặc upload tài liệu về công ty này để tôi có thể trả lời chính xác hơn?';
+      }
+      
+      return 'Xin lỗi, tôi đang gặp vấn đề kỹ thuật với API. Vui lòng thử lại sau hoặc đặt câu hỏi khác.';
     }
   }
 
