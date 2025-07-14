@@ -38,18 +38,40 @@ class OCRService {
         height: 2000
       };
 
+      console.log(`Converting PDF to images (max ${maxPages} pages)...`);
+      console.log(`PDF path: ${pdfPath}`);
+      console.log(`Save path: ${this.tempDir}`);
+      
       const convert = require('pdf2pic').fromPath(pdfPath, options);
       const results = [];
       
-      console.log(`Converting PDF to images (max ${maxPages} pages)...`);
-      
       for (let i = 1; i <= maxPages; i++) {
         try {
+          console.log(`Attempting to convert page ${i}...`);
           const result = await convert(i, { responseType: "image" });
-          results.push(result);
-          console.log(`Converted page ${i}`);
+          
+          if (result && result.path) {
+            results.push(result);
+            console.log(`✅ Converted page ${i}: ${result.path}`);
+          } else {
+            console.log(`❌ No result for page ${i}`);
+            break;
+          }
         } catch (error) {
-          console.log(`No more pages or error at page ${i}`);
+          console.log(`❌ Error converting page ${i}:`, error.message);
+          
+          // Try with bulk conversion instead
+          if (i === 1) {
+            console.log(`🔄 Trying bulk conversion...`);
+            try {
+              const bulkResults = await convert.bulk(-1, { responseType: "image" });
+              console.log(`📊 Bulk conversion results:`, bulkResults.length);
+              return bulkResults.slice(0, maxPages);
+            } catch (bulkError) {
+              console.log(`❌ Bulk conversion also failed:`, bulkError.message);
+              break;
+            }
+          }
           break;
         }
       }

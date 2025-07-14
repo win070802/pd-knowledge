@@ -18,6 +18,14 @@ if [[ "$OSTYPE" == "darwin"* ]]; then
     echo "📦 Installing ImageMagick..."
     brew install imagemagick
     
+    # Install GraphicsMagick (preferred by pdf2pic)
+    echo "📦 Installing GraphicsMagick..."
+    brew install graphicsmagick
+    
+    # Install Ghostscript (required for PDF processing)
+    echo "📦 Installing Ghostscript..."
+    brew install ghostscript
+    
     # Install Tesseract (for OCR)
     echo "📦 Installing Tesseract OCR..."
     brew install tesseract
