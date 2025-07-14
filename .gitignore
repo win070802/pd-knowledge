@@ -24,3 +24,7 @@ npm-debug.log*
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Build outputs
+dist/
+build/
