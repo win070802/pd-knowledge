@@ -25,6 +25,204 @@ class GeminiService {
     return this.constraintsService.removeConstraint(question);
   }
 
+  // Check if question should prioritize knowledge base over constraints
+  isKnowledgePriorityQuestion(question) {
+    const questionLower = question.toLowerCase();
+    
+    // Keywords that indicate specific policy questions where knowledge base should have priority
+    const knowledgePriorityKeywords = [
+      'nghỉ phép', 'ngày phép', 'vacation', 'leave', 'days off',
+      'chính sách nghỉ', 'quy định nghỉ', 'nghỉ bao nhiêu',
+      'buổi nghỉ', 'tháng nghỉ', 'năm nghỉ',
+      'policy nghỉ', 'leave policy', 'vacation policy'
+    ];
+    
+    // Keywords for listing regulations/processes (should search documents)
+    const documentListKeywords = [
+      'các quy định', 'các quy trình', 'quy định quy trình',
+      'danh sách quy định', 'danh sách quy trình',
+      'regulations list', 'process list', 'policies list',
+      'quy định hiện tại', 'quy trình hiện tại',
+      'có những quy định', 'có những quy trình'
+    ];
+    
+    // Company-specific policy patterns
+    const companyPolicyPatterns = [
+      /\w+\s+(nghỉ|phép|vacation|leave)/,  // "PDH nghỉ", "company vacation"
+      /(nghỉ|phép|vacation|leave)\s+của\s+\w+/, // "nghỉ của PDH"
+      /(quy định|chính sách|policy)\s+(nghỉ|phép|vacation|leave)/, // "quy định nghỉ phép"
+      /(theo\s+quy\s+định|according\s+to\s+policy).*\s+(nghỉ|phép|vacation|leave)/ // "theo quy định... nghỉ phép"
+    ];
+    
+    // Document listing patterns
+    const documentListPatterns = [
+      /(các|danh\s+sách|list)\s+(quy\s+định|quy\s+trình|policies|processes)/,
+      /(quy\s+định|quy\s+trình|policies|processes)\s+(hiện\s+tại|current|của\s+\w+)/,
+      /(có\s+những|what)\s+(quy\s+định|quy\s+trình|policies|processes)/
+    ];
+    
+    // Check for specific keywords
+    for (const keyword of knowledgePriorityKeywords) {
+      if (questionLower.includes(keyword)) {
+        return true;
+      }
+    }
+    
+    // Check for document list keywords
+    for (const keyword of documentListKeywords) {
+      if (questionLower.includes(keyword)) {
+        return true;
+      }
+    }
+    
+    // Check for patterns
+    for (const pattern of companyPolicyPatterns) {
+      if (pattern.test(questionLower)) {
+        return true;
+      }
+    }
+    
+    // Check for document list patterns
+    for (const pattern of documentListPatterns) {
+      if (pattern.test(questionLower)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  // Process document listing questions
+  async processDocumentListQuestion(question, startTime) {
+    try {
+      console.log(`📋 Processing document listing question: ${question}`);
+      
+      // Extract company from question (default to PDH if not specified)
+      const company = this.extractCompanyFromQuestion(question) || 'PDH';
+      console.log(`🏢 Target company: ${company}`);
+      
+      // Get documents for the company
+      const documents = await db.getDocumentsByCompany(company);
+      console.log(`📄 Found ${documents.length} documents for ${company}`);
+      
+      if (documents.length === 0) {
+        const answer = `Hiện tại chưa có quy định hoặc quy trình nào được upload cho công ty ${company}. Vui lòng upload tài liệu để có thể trả lời câu hỏi này.`;
+        const responseTime = Date.now() - startTime;
+        
+        await db.createQuestion({
+          question,
+          answer,
+          documentIds: [],
+          responseTime
+        });
+        
+        return {
+          answer,
+          documentIds: [],
+          relevantDocuments: [],
+          responseTime
+        };
+      }
+      
+      // Group documents by category
+      const categorizedDocs = {};
+      documents.forEach(doc => {
+        const category = doc.category || 'Khác';
+        if (!categorizedDocs[category]) {
+          categorizedDocs[category] = [];
+        }
+        categorizedDocs[category].push(doc);
+      });
+      
+      // Generate formatted answer
+      let answer = `📋 **Các quy định và quy trình hiện tại của ${company}:**\n\n`;
+      
+      Object.keys(categorizedDocs).forEach(category => {
+        answer += `📂 **${category}:**\n`;
+        categorizedDocs[category].forEach(doc => {
+          answer += `• ${doc.original_name}\n`;
+        });
+        answer += '\n';
+      });
+      
+      answer += `\n💡 *Tổng cộng: ${documents.length} tài liệu*\n`;
+      answer += `📅 *Cập nhật gần nhất: ${new Date().toLocaleDateString('vi-VN')}*`;
+      
+      const responseTime = Date.now() - startTime;
+      
+      await db.createQuestion({
+        question,
+        answer,
+        documentIds: documents.map(doc => doc.id),
+        responseTime
+      });
+      
+      return {
+        answer,
+        documentIds: documents.map(doc => doc.id),
+        relevantDocuments: documents.map(doc => ({
+          id: doc.id,
+          name: doc.original_name,
+          category: doc.category,
+          uploadDate: doc.upload_date
+        })),
+        responseTime
+      };
+      
+    } catch (error) {
+      console.error('Error processing document list question:', error);
+      throw error;
+    }
+  }
+
+  // Extract company code from question
+  extractCompanyFromQuestion(question) {
+    const companies = ['PDH', 'PDI', 'PDE', 'PDHH', 'RH'];
+    const questionUpper = question.toUpperCase();
+    
+    for (const company of companies) {
+      if (questionUpper.includes(company)) {
+        return company;
+      }
+    }
+    
+    return null;
+  }
+
+  // Check if question is asking for document listing
+  isDocumentListQuestion(question) {
+    const questionLower = question.toLowerCase();
+    
+    const documentListKeywords = [
+      'các quy định', 'các quy trình', 'quy định quy trình',
+      'danh sách quy định', 'danh sách quy trình',
+      'quy định hiện tại', 'quy trình hiện tại',
+      'có những quy định', 'có những quy trình'
+    ];
+    
+    const documentListPatterns = [
+      /(các|danh\s+sách|list)\s+(quy\s+định|quy\s+trình|policies|processes)/,
+      /(quy\s+định|quy\s+trình|policies|processes)\s+(hiện\s+tại|current|của\s+\w+)/,
+      /(có\s+những|what)\s+(quy\s+định|quy\s+trình|policies|processes)/
+    ];
+    
+    // Check for document list keywords
+    for (const keyword of documentListKeywords) {
+      if (questionLower.includes(keyword)) {
+        return true;
+      }
+    }
+    
+    // Check for document list patterns
+    for (const pattern of documentListPatterns) {
+      if (pattern.test(questionLower)) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
   // Main Q&A function
   async askQuestion(question) {
     const startTime = Date.now();
@@ -56,7 +254,32 @@ class GeminiService {
         };
       }
 
-      // Check constraints first (highest priority)
+      // Check if this is a knowledge-priority question (vacation, leave, specific policies)
+      const isKnowledgePriority = this.isKnowledgePriorityQuestion(question);
+      console.log(`📚 Knowledge priority check: ${isKnowledgePriority}`);
+      
+      if (isKnowledgePriority) {
+        console.log(`📚 Checking knowledge base first for priority question`);
+        
+        // Check if this is a document listing question
+        const isDocumentList = this.isDocumentListQuestion(question);
+        
+        if (isDocumentList) {
+          console.log(`📋 Processing document listing question`);
+          return await this.processDocumentListQuestion(question, startTime);
+        }
+        
+        // For other knowledge priority questions, check knowledge base
+        const knowledgeResults = await this.searchService.searchKnowledgeBase(question);
+        
+        if (knowledgeResults.length > 0) {
+          console.log(`✅ Found ${knowledgeResults.length} knowledge entries, using knowledge base`);
+          return await this.aiService.processWithKnowledge(question, knowledgeResults, startTime);
+        }
+        console.log(`❌ No knowledge found, continuing with normal flow`);
+      }
+
+      // Check constraints (high priority for general questions)
       const constraintAnswer = this.constraintsService.checkConstraints(question);
       console.log(`🔒 Constraint check: ${constraintAnswer ? 'Found match' : 'No match'}`);
       

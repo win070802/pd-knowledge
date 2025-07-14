@@ -43,15 +43,71 @@ TRÁLỜI:`;
     }
   }
 
+  // Process questions with knowledge base entries (priority for policies)
+  async processWithKnowledge(question, knowledgeEntries, startTime) {
+    try {
+      console.log(`📚 Processing with ${knowledgeEntries.length} knowledge entries`);
+      
+      // Generate context from knowledge entries
+      const context = this.generateKnowledgeContext(knowledgeEntries);
+      
+      const prompt = `Bạn là trợ lý AI của hệ thống quản lý kiến thức doanh nghiệp. Hãy trả lời câu hỏi dựa trên thông tin đã học được:
+
+KIẾN THỨC ĐÃ HỌC:
+${context}
+
+NGUYÊN TẮC:
+1. Ưu tiên sử dụng thông tin từ kiến thức đã học
+2. Trả lời chính xác và chi tiết
+3. Trả lời bằng tiếng Việt tự nhiên
+4. Nếu không tìm thấy thông tin chính xác, hãy nói rõ
+5. Đưa ra câu trả lời có cấu trúc và dễ hiểu
+
+CÂUHỎI: ${question}
+
+TRÁLỜI:`;
+
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const answer = response.text();
+      const responseTime = Date.now() - startTime;
+      
+      console.log(`✅ Knowledge-based answer generated: ${answer.substring(0, 100)}...`);
+      
+      // Save to database
+      await db.createQuestion({
+        question,
+        answer,
+        documentIds: [], // Knowledge entries don't have document IDs
+        responseTime
+      });
+      
+      return {
+        answer,
+        documentIds: [],
+        relevantDocuments: knowledgeEntries.map(entry => ({
+          id: entry.id,
+          name: entry.question,
+          type: 'knowledge',
+          relevanceScore: entry.relevanceScore || 0
+        })),
+        responseTime
+      };
+    } catch (error) {
+      console.error('Error processing with knowledge:', error);
+      throw error;
+    }
+  }
+
   // Process questions with documents
   async processWithDocuments(question, relevantDocs, startTime) {
     try {
       // Generate context from relevant documents
       const context = this.generateContext(relevantDocs);
       
-      // Create prompt for Gemini
+      // Create enhanced prompt for process-oriented answers
       const prompt = `
-Bạn là một trợ lý AI chuyên nghiệp, nhiệm vụ của bạn là trả lời câu hỏi dựa trên các tài liệu công ty được cung cấp.
+Bạn là một trợ lý AI chuyên nghiệp về quy trình và quản lý doanh nghiệp, nhiệm vụ của bạn là trả lời câu hỏi dựa trên các tài liệu công ty được cung cấp.
 
 NGUYÊN TẮC QUAN TRỌNG:
 1. CHỈ trả lời dựa trên thông tin có trong tài liệu được cung cấp
@@ -59,6 +115,22 @@ NGUYÊN TẮC QUAN TRỌNG:
 3. Trả lời bằng tiếng Việt, rõ ràng và chuyên nghiệp
 4. Trích dẫn tên tài liệu khi có thể
 5. Nếu có nhiều thông tin liên quan, hãy tổng hợp một cách logic
+
+ĐẶC BIỆT QUAN TRỌNG - KHI TRẢ LỜI VỀ QUY TRÌNH:
+• Liệt kê từng BƯỚC một cách rõ ràng và có thứ tự
+• Chỉ rõ AI DUYỆT mỗi bước (nếu có trong tài liệu)
+• Chỉ rõ THỜI GIAN xử lý mỗi bước (nếu có)
+• Chỉ rõ TÀI LIỆU cần thiết cho mỗi bước
+• Sử dụng format:
+  **Bước 1:** [Mô tả bước]
+  - Người duyệt: [Tên/chức vụ]
+  - Thời gian: [Thời gian xử lý]
+  - Tài liệu: [Các giấy tờ cần thiết]
+
+KHI TRẢ LỜI VỀ DANH SÁCH CÔNG TY/QUY ĐỊNH:
+• Phân loại theo HẠNG MỤC rõ ràng
+• Sử dụng bullet points hoặc numbered list
+• Nhóm theo chủ đề (VD: Tài chính, Nhân sự, Quản lý...)
 
 NGỮ CẢNH TÀI LIỆU:
 ${context}
@@ -111,6 +183,16 @@ TRÁLỜI:`;
       context += content + '\n';
     });
     
+    return context;
+  }
+
+  // Generate context from knowledge entries
+  generateKnowledgeContext(knowledgeEntries) {
+    let context = '';
+    knowledgeEntries.forEach((entry, index) => {
+      context += `\n[Kiến thức ${index + 1}: ${entry.question}]\n`;
+      context += entry.answer + '\n';
+    });
     return context;
   }
 

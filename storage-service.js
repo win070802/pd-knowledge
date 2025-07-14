@@ -51,21 +51,43 @@ class StorageService {
     }
   }
 
-  // Auto-detect company from filename or content
+  // Enhanced auto-detect company from filename or content
   async detectCompanyFromFile(fileName, content = null) {
     try {
+      console.log(`🔍 Detecting company for file: ${fileName}`);
       const companies = await db.getCompanies();
+      console.log(`📊 Found ${companies.length} companies in database`);
       
-      // Check filename for company codes
+      // Clean filename for better detection
       const fileNameLower = fileName.toLowerCase();
+      
+      // Priority 1: Check for company code at the beginning of filename (like PDH-KT-QT01)
       for (const company of companies) {
-        if (fileNameLower.includes(company.code.toLowerCase())) {
-          return company;
+        const companyCode = company.code.toLowerCase();
+        console.log(`🔎 Testing company: ${company.code} against filename: ${fileName}`);
+        
+        // Pattern: COMPANY-... or COMPANY_... or starts with COMPANY
+        const patterns = [
+          new RegExp(`^${companyCode}-`, 'i'),  // PDH-KT-QT01
+          new RegExp(`^${companyCode}_`, 'i'),  // PDH_KT_QT01
+          new RegExp(`^${companyCode}[\\s\\.]`, 'i'), // PDH KT or PDH.KT
+          new RegExp(`${companyCode}`, 'i')     // Anywhere in filename
+        ];
+        
+        for (const pattern of patterns) {
+          if (pattern.test(fileName)) {
+            console.log(`🎯 Detected company ${company.code} from filename pattern: ${fileName}`);
+            return company;
+          }
         }
-        // Check keywords
+      }
+      
+      // Priority 2: Check keywords in filename
+      for (const company of companies) {
         if (company.keywords) {
           for (const keyword of company.keywords) {
             if (fileNameLower.includes(keyword.toLowerCase())) {
+              console.log(`🎯 Detected company ${company.code} from keyword: ${keyword}`);
               return company;
             }
           }
@@ -98,7 +120,39 @@ class StorageService {
     }
   }
 
-  async uploadFile(filePath, fileName, companyCode = null) {
+  // Detect document category from filename
+  detectCategoryFromFileName(fileName) {
+    const fileNameLower = fileName.toLowerCase();
+    
+    // Category patterns based on common Vietnamese business document types
+    const categoryPatterns = {
+      'Quy trình': ['quy trinh', 'quy-trinh', 'qt', 'qtrinh', 'process', 'procedure'],
+      'Quy định': ['quy dinh', 'quy-dinh', 'qd', 'qdinh', 'regulation', 'rule'],
+      'Kiểm toán': ['kiem toan', 'kiem-toan', 'kt', 'audit'],
+      'Tài chính': ['tai chinh', 'tai-chinh', 'tc', 'finance', 'financial'],
+      'Nhân sự': ['nhan su', 'nhan-su', 'ns', 'hr', 'human resource'],
+      'Quản lý': ['quan ly', 'quan-ly', 'ql', 'management'],
+      'Chính sách': ['chinh sach', 'chinh-sach', 'cs', 'policy'],
+      'Báo cáo': ['bao cao', 'bao-cao', 'bc', 'report'],
+      'Hướng dẫn': ['huong dan', 'huong-dan', 'hd', 'guide', 'instruction'],
+      'Sơ đồ': ['so do', 'so-do', 'sd', 'chart', 'diagram'],
+      'Hợp đồng': ['hop dong', 'hop-dong', 'hd', 'contract'],
+      'Thanh toán': ['thanh toan', 'thanh-toan', 'tt', 'payment']
+    };
+    
+    for (const [category, patterns] of Object.entries(categoryPatterns)) {
+      for (const pattern of patterns) {
+        if (fileNameLower.includes(pattern)) {
+          console.log(`📂 Detected category: ${category} from pattern: ${pattern}`);
+          return category;
+        }
+      }
+    }
+    
+    return 'Tài liệu'; // Default category
+  }
+
+  async uploadFile(filePath, fileName, originalName = null, companyCode = null) {
     let company = null;
     
     // If company code provided, get company info
@@ -106,34 +160,39 @@ class StorageService {
       company = await db.getCompanyByCode(companyCode.toUpperCase());
     }
     
-    // If no company specified, try to auto-detect
+    // If no company specified, try to auto-detect from original filename
     if (!company) {
-      company = await this.detectCompanyFromFile(fileName);
+      const detectFromName = originalName || fileName;
+      company = await this.detectCompanyFromFile(detectFromName);
     }
 
+    // Detect category from original filename
+    const category = this.detectCategoryFromFileName(originalName || fileName);
+
     if (this.useCloudStorage) {
-      return await this.uploadToCloud(filePath, fileName, company);
+      return await this.uploadToCloud(filePath, fileName, company, category);
     } else {
-      return await this.uploadToLocal(filePath, fileName, company);
+      return await this.uploadToLocal(filePath, fileName, company, category);
     }
   }
 
   async uploadFileByCompany(filePath, fileName, companyCode) {
-    return await this.uploadFile(filePath, fileName, companyCode);
+    return await this.uploadFile(filePath, fileName, null, companyCode);
   }
 
-  async uploadToCloud(filePath, fileName, company = null) {
+  async uploadToCloud(filePath, fileName, company = null, category = null) {
     try {
       console.log(`☁️ Uploading to cloud: ${fileName}`);
       
-      // Organize by company folder
+      // Organize by company/category folder structure
       let destination;
       if (company) {
-        destination = `uploads/${company.code}/${fileName}`;
-        console.log(`📁 Organizing into company folder: ${company.code}`);
+        const categoryFolder = category || 'General';
+        destination = `uploads/${company.code}/${categoryFolder}/${fileName}`;
+        console.log(`📁 Organizing into: ${company.code}/${categoryFolder}/`);
       } else {
-        destination = `uploads/general/${fileName}`;
-        console.log(`📁 No company detected, using general folder`);
+        // Reject upload if no company detected
+        throw new Error('❌ Cannot determine company for this file. Please ensure filename contains company code (PDH, PDI, PDE, PDHH, RH) or declare new company.');
       }
       
       await this.bucket.upload(filePath, {
@@ -167,18 +226,19 @@ class StorageService {
     }
   }
 
-  async uploadToLocal(filePath, fileName, company = null) {
+  async uploadToLocal(filePath, fileName, company = null, category = null) {
     try {
       console.log(`💾 Uploading to local: ${fileName}`);
       
-      // Organize by company folder
+      // Organize by company/category folder structure
       let uploadDir;
       if (company) {
-        uploadDir = `./uploads/${company.code}`;
-        console.log(`📁 Organizing into company folder: ${company.code}`);
+        const categoryFolder = category || 'General';
+        uploadDir = `./uploads/${company.code}/${categoryFolder}`;
+        console.log(`📁 Organizing into: ${company.code}/${categoryFolder}/`);
       } else {
-        uploadDir = './uploads/general';
-        console.log(`📁 No company detected, using general folder`);
+        // Reject upload if no company detected
+        throw new Error('❌ Cannot determine company for this file. Please ensure filename contains company code (PDH, PDI, PDE, PDHH, RH) or declare new company.');
       }
       
       if (!fs.existsSync(uploadDir)) {

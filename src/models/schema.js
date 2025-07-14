@@ -31,6 +31,7 @@ async function initializeDatabase() {
         file_size INTEGER NOT NULL,
         content_text TEXT,
         company_id INTEGER REFERENCES companies(id),
+        category VARCHAR(100),
         upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         processed BOOLEAN DEFAULT FALSE,
         metadata JSONB

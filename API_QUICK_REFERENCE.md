@@ -1,108 +1,104 @@
-# PDF Knowledge Management - API Quick Reference
+# API Quick Reference
 
-## 🚀 Endpoint Overview
+## 📋 Core APIs
 
-| Category | Method | Endpoint | Description |
-|----------|--------|----------|-------------|
-| **System** | GET | `/health` | Health check |
-| **Documents** | POST | `/api/upload` | Upload PDF document |
-| | GET | `/api/documents` | Get all documents |
-| | GET | `/api/documents/:id` | Get document by ID |
-| | DELETE | `/api/documents/:id` | Delete document |
-| | POST | `/api/documents/:id/reprocess` | 🆕 AI text correction |
-| | GET | `/api/search` | Search documents |
-| **Q&A** | POST | `/api/ask` | Ask question (AI-powered) |
-| | GET | `/api/history` | Get Q&A history |
-| | POST | `/api/summarize/:id` | Summarize document |
-| | POST | `/api/extract` | Extract key information |
-| **Constraints** | GET | `/api/constraints` | 🆕 Get all constraints |
-| | POST | `/api/constraints` | 🆕 Add constraint |
-| | DELETE | `/api/constraints` | 🆕 Remove constraint |
-| **Companies** | GET | `/api/companies` | 🆕 Get all companies |
-| | GET | `/api/companies/:code` | 🆕 Get company by code |
-| | POST | `/api/companies` | 🆕 Create company |
-| | PUT | `/api/companies/:code` | 🆕 Update company |
-| | DELETE | `/api/companies/:code` | 🆕 Delete company |
-| **Sensitive Rules** | GET | `/api/sensitive-rules` | 🆕 Get sensitive rules |
-| | POST | `/api/sensitive-rules` | 🆕 Create rule |
-| | PUT | `/api/sensitive-rules/:id` | 🆕 Update rule |
-| | DELETE | `/api/sensitive-rules/:id` | 🆕 Delete rule |
-| **Knowledge Base** | GET | `/api/knowledge/company/:id` | 🆕 Get company knowledge |
-| | GET | `/api/knowledge/search` | 🆕 Search knowledge |
-| | POST | `/api/knowledge` | 🆕 Create knowledge |
-| | PUT | `/api/knowledge/:id` | 🆕 Update knowledge |
-| | DELETE | `/api/knowledge/:id` | 🆕 Delete knowledge |
-| **Debug** | POST | `/api/debug/search` | 🆕 Debug search algorithm |
-| | GET | `/api/debug/docs/:id` | 🆕 Analyze document |
+| Method | Endpoint | Description | Body/Params |
+|--------|----------|-------------|-------------|
+| `POST` | `/api/upload` | Upload PDF | `document` (file) |
+| `POST` | `/api/ask` | Ask question | `{"question": "..."}` |
+| `POST` | `/api/learn` | Teach AI | `{"question": "...", "answer": "..."}` |
+| `GET` | `/api/search` | Search docs | `?q=search_term` |
+| `GET` | `/health` | Health check | - |
 
-## 🔥 Most Used Endpoints
+## 📄 Document Management
 
-### 1. Upload & Process Document
+| Method | Endpoint | Description | Response |
+|--------|----------|-------------|----------|
+| `GET` | `/api/documents` | List all documents | Document array |
+| `GET` | `/api/documents/:id` | Get document by ID | Document object |
+| `DELETE` | `/api/documents/:id` | Delete document | Success message |
+| `GET` | `/api/history` | Q&A history | `?limit=10` |
+
+## 🏢 Company Management
+
+| Method | Endpoint | Description | Body |
+|--------|----------|-------------|------|
+| `GET` | `/api/companies` | List companies | - |
+| `GET` | `/api/companies/:code` | Get company | - |
+| `POST` | `/api/companies` | Create company | Company object |
+| `PUT` | `/api/companies/:code` | Update company | Company object |
+| `DELETE` | `/api/companies/:code` | Delete company | - |
+
+## ⚙️ System Management
+
+| Method | Endpoint | Description | Purpose |
+|--------|----------|-------------|---------|
+| `GET` | `/api/constraints` | Get business rules | Fast answers |
+| `POST` | `/api/constraints` | Add/update rule | Custom responses |
+| `DELETE` | `/api/constraints` | Remove rule | Rule cleanup |
+
+## 🧠 Knowledge Base
+
+| Method | Endpoint | Description | Usage |
+|--------|----------|-------------|-------|
+| `GET` | `/api/learn` | Get all knowledge | View learned data |
+| `POST` | `/api/learn` | Add knowledge | Teach AI new facts |
+| `GET` | `/api/knowledge/search` | Search knowledge | `?q=term&company_id=1` |
+
+## 📊 Quick Examples
+
+### Upload & Ask
 ```bash
-# Upload
-curl -X POST http://localhost:8080/api/upload -F 'document=@file.pdf'
+# 1. Upload
+curl -X POST http://localhost:3000/api/upload -F 'document=@file.pdf'
 
-# AI text correction
-curl -X POST http://localhost:8080/api/documents/25/reprocess
+# 2. Ask about it
+curl -X POST http://localhost:3000/api/ask -H 'Content-Type: application/json' \
+  -d '{"question": "What is this document about?"}'
 ```
 
-### 2. Ask Questions
+### Teach & Test
 ```bash
-# Smart Q&A with AI
-curl -X POST http://localhost:8080/api/ask \
-  -H 'Content-Type: application/json' \
-  -d '{"question": "PDH là công ty gì?"}'
+# 1. Teach
+curl -X POST http://localhost:3000/api/learn -H 'Content-Type: application/json' \
+  -d '{"question": "Company policy", "answer": "12 days vacation per year"}'
+
+# 2. Test
+curl -X POST http://localhost:3000/api/ask -H 'Content-Type: application/json' \
+  -d '{"question": "How many vacation days?"}'
 ```
 
-### 3. Manage Constraints
-```bash
-# Add quick answer
-curl -X POST http://localhost:8080/api/constraints \
-  -H 'Content-Type: application/json' \
-  -d '{"question": "PDH là gì?", "answer": "Phát Đạt Holdings"}'
+## 🚨 HTTP Status Codes
+
+| Code | Meaning | Common Cases |
+|------|---------|--------------|
+| `200` | OK | Successful operation |
+| `400` | Bad Request | Invalid input data |
+| `404` | Not Found | Document/company not found |
+| `413` | Payload Too Large | File > 10MB |
+| `429` | Too Many Requests | Rate limit exceeded |
+| `500` | Server Error | Processing failed |
+
+## 🔧 Response Format
+
+### Success Response
+```json
+{
+  "success": true,
+  "data": {...},
+  "message": "Operation completed"
+}
 ```
 
-### 4. Debug Search
-```bash
-# Debug search algorithm
-curl -X POST http://localhost:8080/api/debug/search \
-  -H 'Content-Type: application/json' \
-  -d '{"question": "ban tài chính"}'
+### Error Response
+```json
+{
+  "success": false,
+  "error": "Error description",
+  "code": "ERROR_CODE"
+}
 ```
-
-## ⚡ Response Times
-
-| Endpoint Type | Typical Response Time |
-|---------------|----------------------|
-| Constraints | 35-50ms |
-| Document search | 100-500ms |
-| AI Q&A (simple) | 1-3s |
-| AI Q&A (complex) | 2-10s |
-| OCR processing | 10-30s |
-| AI text correction | 3-10s |
-
-## 🎯 Key Features
-
-- **🔍 Smart Search**: Keyword extraction + relevance scoring
-- **🧠 AI Text Correction**: Vietnamese diacritics + OCR fixes
-- **⚡ Constraint System**: Instant answers for common questions
-- **🔄 Deduplication**: Automatic duplicate document detection
-- **🛡️ Content Filtering**: Sensitive content detection
-- **📊 Debug Tools**: Search algorithm analysis
-
-## 🔧 Common Workflows
-
-### Complete Document Workflow
-1. Upload → `/api/upload`
-2. AI Correction → `/api/documents/:id/reprocess`
-3. Ask Questions → `/api/ask`
-4. Debug if needed → `/api/debug/search`
-
-### Constraint Management
-1. Add → `/api/constraints` (POST)
-2. Test → `/api/ask`
-3. Update → `/api/constraints` (POST again)
-4. Remove → `/api/constraints` (DELETE)
 
 ---
-*Xem API_GUIDE.md để có hướng dẫn chi tiết với examples và error handling* 
+
+**Note**: All POST requests use `Content-Type: application/json` unless specified otherwise. 

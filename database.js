@@ -11,6 +11,7 @@ const db = {
   createDocument: documentRepository.createDocument.bind(documentRepository),
   getDocuments: documentRepository.getDocuments.bind(documentRepository),
   getDocumentById: documentRepository.getDocumentById.bind(documentRepository),
+  getDocumentsByCompany: documentRepository.getDocumentsByCompany.bind(documentRepository),
   updateDocumentProcessed: documentRepository.updateDocumentProcessed.bind(documentRepository),
   updateDocument: documentRepository.updateDocument.bind(documentRepository),
   searchDocuments: documentRepository.searchDocuments.bind(documentRepository),

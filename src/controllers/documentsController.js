@@ -44,27 +44,34 @@ const uploadDocument = async (req, res) => {
     // Extract text from PDF (with OCR support for scanned PDFs)
     const contentText = await extractTextFromPDF(tempFilePath);
 
-    // Upload to storage (cloud or local)
-    const storageResult = await storageService.uploadFile(tempFilePath, fileName);
+    // Upload to storage (cloud or local) with company detection
+    const storageResult = await storageService.uploadFile(tempFilePath, fileName, originalName);
+
+    // Detect category from filename  
+    const category = storageService.detectCategoryFromFileName(originalName);
 
     // Determine processing method
     const isScanned = ocrService.isScannedPDF(contentText);
     const processingMethod = isScanned ? 'OCR' : 'Standard';
 
-    // Save document to database
+    // Save document to database with company and category
     const document = await db.createDocument({
       filename: fileName,
       originalName: originalName,
       filePath: storageResult.path,
       fileSize: fileSize,
       content: contentText,
+      companyId: storageResult.company ? storageResult.company.id : null,
+      category: category,
       metadata: {
         uploadedAt: new Date().toISOString(),
         contentLength: contentText.length,
         processingMethod: processingMethod,
         isScanned: isScanned,
         storageType: storageResult.storage,
-        storageUrl: storageResult.url
+        storageUrl: storageResult.url,
+        companyCode: storageResult.company ? storageResult.company.code : null,
+        detectedCategory: category
       }
     });
 

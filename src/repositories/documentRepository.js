@@ -5,8 +5,8 @@ class DocumentRepository {
     const client = await pool.connect();
     try {
       const result = await client.query(
-        'INSERT INTO documents (filename, original_name, file_path, file_size, content_text, metadata) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-        [documentData.filename, documentData.originalName, documentData.filePath, documentData.fileSize, documentData.content, documentData.metadata]
+        'INSERT INTO documents (filename, original_name, file_path, file_size, content_text, company_id, category, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
+        [documentData.filename, documentData.originalName, documentData.filePath, documentData.fileSize, documentData.content, documentData.companyId, documentData.category, documentData.metadata]
       );
       return result.rows[0];
     } finally {
@@ -18,6 +18,22 @@ class DocumentRepository {
     const client = await pool.connect();
     try {
       const result = await client.query('SELECT * FROM documents ORDER BY upload_date DESC');
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getDocumentsByCompany(companyCode) {
+    const client = await pool.connect();
+    try {
+      const result = await client.query(`
+        SELECT d.*, c.code as company_code, c.full_name as company_name 
+        FROM documents d 
+        JOIN companies c ON d.company_id = c.id 
+        WHERE c.code = $1 
+        ORDER BY d.upload_date DESC
+      `, [companyCode]);
       return result.rows;
     } finally {
       client.release();

@@ -13,6 +13,7 @@ const debugRoutes = require('./debug');
 
 // Import controllers for standalone endpoints
 const documentsController = require('../controllers/documentsController');
+const learnController = require('../controllers/learnController');
 
 // Health check
 router.get('/health', (req, res) => {
@@ -31,5 +32,9 @@ router.use('/api/companies', companiesRoutes);
 router.use('/api/sensitive-rules', sensitiveRulesRoutes);
 router.use('/api/knowledge', knowledgeRoutes);
 router.use('/api/debug', debugRoutes);
+
+// Learn API routes
+router.post('/api/learn', learnController.learnFromText);
+router.get('/api/learn', learnController.getKnowledge);
 
 module.exports = router; 
