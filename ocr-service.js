@@ -2,11 +2,16 @@ const Tesseract = require('tesseract.js');
 const { convert } = require('pdf2pic');
 const fs = require('fs');
 const path = require('path');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+require('dotenv').config();
 
 class OCRService {
   constructor() {
     this.tempDir = './temp-images';
     this.ensureTempDir();
+    // Initialize Gemini AI for text correction
+    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   }
 
   ensureTempDir() {
@@ -122,6 +127,67 @@ class OCRService {
     }
   }
 
+  // Correct OCR text using AI
+  async correctOCRText(rawText) {
+    try {
+      if (!rawText || rawText.trim().length < 10) {
+        return rawText;
+      }
+
+      console.log(`🔧 Correcting OCR text (${rawText.length} characters)...`);
+      
+      const prompt = `
+Bạn là chuyên gia sửa chính tả tiếng Việt. Nhiệm vụ của bạn là sửa lỗi chính tả trong văn bản được trích xuất từ OCR, đặc biệt là các tài liệu công ty.
+
+NGUYÊN TẮC QUAN TRỌNG:
+1. CHỈ sửa lỗi chính tả, KHÔNG thay đổi nội dung hoặc ý nghĩa
+2. Sửa dấu thanh tiếng Việt bị thiếu hoặc sai
+3. Sửa các từ bị nhận dạng sai phổ biến trong OCR
+4. Giữ nguyên format, số liệu, tên riêng nếu có thể
+5. Sửa các từ viết tắt công ty phổ biến
+
+CÁC LỖI THƯỜNG GẶP TRONG OCR:
+- "BAN TAI CHIN" → "BAN TÀI CHÍNH"
+- "SƠ BO CHOC NANG" → "SƠ ĐỒ CHỨC NĂNG"  
+- "PHAP CHE" → "PHÁP CHẾ"
+- "QUAN LY" → "QUẢN LÝ"
+- "KE TOAN" → "KẾ TOÁN"
+- "NHAN SU" → "NHÂN SỰ"
+- "CONG TY" → "CÔNG TY"
+- "GIAM DOC" → "GIÁM ĐỐC"
+- "CHU TICH" → "CHỦ TỊCH"
+
+VĂN BẢN GỐC (từ OCR):
+${rawText}
+
+VĂN BẢN ĐÃ SỬA:`;
+
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      let correctedText = response.text().trim();
+      
+      // Remove AI response prefix if present
+      if (correctedText.startsWith('VĂN BẢN ĐÃ SỬA:')) {
+        correctedText = correctedText.replace(/^VĂN BẢN ĐÃ SỬA:\s*/, '').trim();
+      }
+      
+      // If the result is empty or too short, return original
+      if (!correctedText || correctedText.length < rawText.length * 0.5) {
+        console.log('⚠️ Correction result too short, using original text');
+        return rawText;
+      }
+      
+      console.log(`✅ Text correction completed`);
+      console.log(`📊 Original: ${rawText.length} chars → Corrected: ${correctedText.length} chars`);
+      
+      return correctedText;
+    } catch (error) {
+      console.error('❌ Error correcting OCR text:', error);
+      console.log('🔄 Fallback: Using original text');
+      return rawText; // Return original if correction fails
+    }
+  }
+
   // Process scanned PDF with OCR
   async processScannedPDF(pdfPath, maxPages = 10) {
     try {
@@ -153,6 +219,13 @@ class OCRService {
       }
 
       console.log(`✅ OCR completed. Extracted ${allText.length} characters`);
+      
+      // Apply AI-powered text correction
+      if (allText.trim().length > 0) {
+        const correctedText = await this.correctOCRText(allText);
+        return correctedText;
+      }
+      
       return allText;
 
     } catch (error) {

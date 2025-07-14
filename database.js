@@ -155,6 +155,36 @@ const db = {
     }
   },
 
+  async updateDocument(id, updateData) {
+    const client = await pool.connect();
+    try {
+      // Build dynamic query based on provided fields
+      const fields = Object.keys(updateData);
+      const values = Object.values(updateData);
+      
+      if (fields.length === 0) {
+        throw new Error('No fields to update');
+      }
+      
+      const setClause = fields.map((field, index) => `${field} = $${index + 1}`).join(', ');
+      const query = `UPDATE documents SET ${setClause} WHERE id = $${fields.length + 1} RETURNING *`;
+      
+      const result = await client.query(query, [...values, id]);
+      
+      // If content_text was updated, rebuild search vector
+      if (updateData.content_text) {
+        await client.query(
+          'UPDATE documents SET search_vector = to_tsvector(\'english\', content_text) WHERE id = $1',
+          [id]
+        );
+      }
+      
+      return result.rows[0];
+    } finally {
+      client.release();
+    }
+  },
+
   async searchDocuments(searchTerm) {
     const client = await pool.connect();
     try {

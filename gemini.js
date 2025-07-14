@@ -174,26 +174,49 @@ class GeminiService {
       
       const documents = await db.getDocuments();
       const relevantDocs = [];
+      const seenContent = new Set(); // For deduplication
       
       for (const doc of documents) {
         if (!doc.content_text) continue;
         
         const content = doc.content_text.toLowerCase();
+        
+        // Skip duplicates based on content similarity (first 200 chars)
+        const contentFingerprint = content.substring(0, 200);
+        if (seenContent.has(contentFingerprint)) {
+          console.log(`🔄 Skipping duplicate document: ${doc.original_name}`);
+          continue;
+        }
+        seenContent.add(contentFingerprint);
+        
         let relevanceScore = 0;
+        let keywordCount = 0;
         
         for (const keyword of keywords) {
           const matches = (content.match(new RegExp(keyword, 'g')) || []).length;
           relevanceScore += matches;
+          if (matches > 0) keywordCount++;
         }
         
-        if (relevanceScore > 0) {
-          relevantDocs.push({ ...doc, relevanceScore });
+        // Boost score for documents that have more different keywords
+        // This helps prioritize documents with diverse keyword coverage
+        if (keywordCount > 0) {
+          const keywordDiversityBonus = keywordCount * 2;
+          const finalScore = relevanceScore + keywordDiversityBonus;
+          relevantDocs.push({ ...doc, relevanceScore: finalScore, originalScore: relevanceScore, keywordCount });
         }
       }
       
       return relevantDocs
-        .sort((a, b) => b.relevanceScore - a.relevanceScore)
-        .slice(0, limit);
+        .sort((a, b) => {
+          // Primary sort by relevance score
+          if (b.relevanceScore !== a.relevanceScore) {
+            return b.relevanceScore - a.relevanceScore;
+          }
+          // Secondary sort by keyword diversity
+          return b.keywordCount - a.keywordCount;
+        })
+        .slice(0, Math.max(limit, 10)); // Ensure we get at least 10 results
     } catch (error) {
       console.error('Error finding relevant documents:', error);
       throw error;
@@ -301,7 +324,10 @@ class GeminiService {
       'nghỉ phép', 'leave', 'vacation', 'lương', 'salary', 'thưởng', 'bonus',
       'kỷ luật', 'discipline', 'vi phạm', 'violation', 'đánh giá', 'evaluation',
       'tuyển dụng', 'recruitment', 'training', 'đào tạo', 'bảo hiểm', 'insurance',
-      'hợp đồng', 'contract', 'thỏa thuận', 'agreement', 'báo cáo', 'report'
+      'hợp đồng', 'contract', 'thỏa thuận', 'agreement', 'báo cáo', 'report',
+      'sơ đồ', 'chức năng', 'tổ chức', 'cơ cấu', 'cấu trúc', 'ban', 'phòng',
+      'bộ phận', 'đơn vị', 'trưởng phòng', 'giám đốc', 'chủ tịch', 'ceo',
+      'organizational chart', 'organization', 'structure', 'hierarchy'
     ];
     
     // Company-related phrases that indicate document queries vs general questions

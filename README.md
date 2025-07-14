@@ -4,14 +4,31 @@ Hệ thống quản lý kiến thức PDF với AI Gemini - Một giải pháp t
 
 ## 🚀 Tính năng chính
 
+### 📄 Core Features
 - **Upload và xử lý PDF**: Tự động trích xuất văn bản từ file PDF
 - **🔍 OCR Support**: Hỗ trợ đọc text từ PDF scan/hình ảnh bằng Tesseract OCR
 - **Hỏi đáp thông minh**: Sử dụng AI Gemini để trả lời câu hỏi dựa trên nội dung tài liệu
 - **Tìm kiếm tài liệu**: Tìm kiếm theo từ khóa trong nội dung tài liệu
-- **Tóm tắt tài liệu**: Tự động tóm tắt nội dung tài liệu
-- **Lịch sử hỏi đáp**: Lưu trữ và xem lại các câu hỏi đã đặt
-- **Trích xuất thông tin**: Trích xuất thông tin quan trọng theo chủ đề
 - **🇻🇳 Hỗ trợ tiếng Việt**: OCR và AI đều hỗ trợ tiếng Việt
+
+### 🆕 New AI-Powered Features
+- **🧠 AI Text Correction**: Tự động sửa lỗi OCR bằng AI, cải thiện chất lượng text tiếng Việt
+- **⚡ Smart Constraints**: Hệ thống trả lời nhanh cho câu hỏi thường gặp (35ms vs 2-10s)
+- **🔄 Document Deduplication**: Tự động phát hiện và bỏ qua tài liệu trùng lặp
+- **🎯 Intelligent Classification**: Phân loại câu hỏi document-specific vs general
+- **🔍 Advanced Search**: Keyword extraction với relevance scoring
+
+### 🏢 Enterprise Features  
+- **Company Management**: Quản lý thông tin các công ty trong hệ thống
+- **Knowledge Base**: Cơ sở tri thức riêng cho từng công ty
+- **Sensitive Content Filter**: Phát hiện và chặn nội dung nhạy cảm
+- **Debug Tools**: Công cụ phân tích search algorithm và document quality
+
+### 📊 Management & Analytics
+- **Tóm tắt tài liệu**: Tự động tóm tắt nội dung tài liệu
+- **Lịch sử hỏi đáp**: Lưu trữ và xem lại các câu hỏi đã đặt  
+- **Trích xuất thông tin**: Trích xuất thông tin quan trọng theo chủ đề
+- **Performance Analytics**: Theo dõi response time và quality metrics
 
 ## 📋 Yêu cầu hệ thống
 
@@ -92,12 +109,17 @@ Server sẽ chạy tại: `http://localhost:3000`
 
 ## 📖 API Documentation
 
-### 1. Health Check
+### 🔧 System APIs
+
+#### 1. Health Check
 ```
 GET /health
+Response: { status: "OK", timestamp: "2024-..." }
 ```
 
-### 2. Upload PDF Document
+### 📄 Document Management APIs
+
+#### 2. Upload PDF Document
 ```
 POST /api/upload
 Content-Type: multipart/form-data
@@ -115,52 +137,286 @@ Response includes:
 - metadata: Additional processing info
 ```
 
-### 3. Hỏi đáp
+#### 3. Get All Documents
+```
+GET /api/documents
+Response: { success: true, documents: [...] }
+```
+
+#### 4. Get Document by ID
+```
+GET /api/documents/:id
+Response: { success: true, document: {...} }
+```
+
+#### 5. Search Documents
+```
+GET /api/search?q=từ_khóa
+Response: { success: true, documents: [...], searchTerm: "..." }
+```
+
+#### 6. Delete Document
+```
+DELETE /api/documents/:id
+Response: { success: true, message: "Document deleted successfully" }
+```
+
+#### 7. **🆕 Reprocess Document with AI Text Correction**
+```
+POST /api/documents/:id/reprocess
+Content-Type: application/json
+
+Automatically corrects OCR errors using AI:
+- Vietnamese diacritics: "BAN TAI CHIN" → "BAN TÀI CHÍNH"
+- Company terms: "SƠ BO CHOC NANG" → "SƠ ĐỒ CHỨC NĂNG"
+- Name corrections: "NGUYEN VO KHE" → "NGUYỄN VÕ KHE"
+
+Response: { success: true, message: "Document reprocessed successfully" }
+```
+
+### 💬 Q&A and AI APIs
+
+#### 8. Ask Question
 ```
 POST /api/ask
 Content-Type: application/json
 Body: {
   "question": "Câu hỏi của bạn"
 }
+
+Features:
+- Smart constraint checking
+- Document-specific vs general questions
+- AI-powered answers using Gemini
+- Automatic document search and relevance scoring
+
+Response: {
+  success: true,
+  question: "...",
+  answer: "...",
+  relevantDocuments: [...],
+  responseTime: 1234
+}
 ```
 
-### 4. Lấy danh sách tài liệu
+#### 9. Get Q&A History
 ```
-GET /api/documents
-```
-
-### 5. Lấy thông tin tài liệu
-```
-GET /api/documents/:id
+GET /api/history?limit=50
+Response: { success: true, questions: [...] }
 ```
 
-### 6. Tìm kiếm tài liệu
-```
-GET /api/search?q=từ_khóa
-```
-
-### 7. Tóm tắt tài liệu
+#### 10. Summarize Document
 ```
 POST /api/summarize/:id
+Response: { success: true, summary: {...} }
 ```
 
-### 8. Trích xuất thông tin
+#### 11. Extract Key Information
 ```
 POST /api/extract
 Content-Type: application/json
 Body: {
   "searchTerm": "chủ đề cần trích xuất"
 }
+Response: { success: true, result: {...} }
 ```
 
-### 9. Lịch sử hỏi đáp
+### 🎯 Constraint Management APIs
+
+#### 12. **🆕 Get All Constraints**
 ```
-GET /api/history?limit=50
+GET /api/constraints
+Response: { success: true, data: {...} }
 ```
 
-### 10. Xóa tài liệu
+#### 13. **🆕 Add/Update Constraint**
 ```
-DELETE /api/documents/:id
+POST /api/constraints
+Content-Type: application/json
+Body: {
+  "question": "PDH là công ty gì?",
+  "answer": "Phát Đạt Holdings"
+}
+Response: { success: true, message: "Constraint added successfully" }
+```
+
+#### 14. **🆕 Delete Constraint**
+```
+DELETE /api/constraints
+Content-Type: application/json
+Body: {
+  "question": "Question to remove"
+}
+Response: { success: true, message: "Constraint removed successfully" }
+```
+
+### 🏢 Company Management APIs
+
+#### 15. **🆕 Get All Companies**
+```
+GET /api/companies
+Response: { success: true, data: [...] }
+```
+
+#### 16. **🆕 Get Company by Code**
+```
+GET /api/companies/:code
+Response: { success: true, data: {...} }
+```
+
+#### 17. **🆕 Create Company**
+```
+POST /api/companies
+Content-Type: application/json
+Body: {
+  "code": "PDH",
+  "fullName": "Phát Đạt Holdings",
+  "parentGroup": "Phát Đạt Group",
+  "chairman": "Nguyễn Văn Đạt",
+  "ceo": "Lê Văn Phát",
+  "description": "Công ty...",
+  "keywords": ["PDH", "Phát Đạt"]
+}
+Response: { success: true, data: {...} }
+```
+
+#### 18. **🆕 Update Company**
+```
+PUT /api/companies/:code
+Content-Type: application/json
+Body: { ... (company data) }
+Response: { success: true, data: {...} }
+```
+
+#### 19. **🆕 Delete Company**
+```
+DELETE /api/companies/:code
+Response: { success: true, message: "Company deleted successfully" }
+```
+
+### 🛡️ Sensitive Rules Management APIs
+
+#### 20. **🆕 Get Sensitive Rules**
+```
+GET /api/sensitive-rules?active=true
+Response: { success: true, data: [...] }
+```
+
+#### 21. **🆕 Create Sensitive Rule**
+```
+POST /api/sensitive-rules
+Content-Type: application/json
+Body: {
+  "ruleName": "Violence Detection",
+  "pattern": "súng|đạn|vũ khí|giết|bạo lực",
+  "description": "Detect violent content",
+  "isActive": true
+}
+Response: { success: true, data: {...} }
+```
+
+#### 22. **🆕 Update Sensitive Rule**
+```
+PUT /api/sensitive-rules/:id
+Content-Type: application/json
+Body: { ... (rule data) }
+Response: { success: true, data: {...} }
+```
+
+#### 23. **🆕 Delete Sensitive Rule**
+```
+DELETE /api/sensitive-rules/:id
+Response: { success: true, message: "Rule deleted successfully" }
+```
+
+### 🧠 Knowledge Base Management APIs
+
+#### 24. **🆕 Get Knowledge by Company**
+```
+GET /api/knowledge/company/:companyId?active=true
+Response: { success: true, data: [...] }
+```
+
+#### 25. **🆕 Search Knowledge Base**
+```
+GET /api/knowledge/search?q=search_term&company_id=1
+Response: { success: true, data: [...] }
+```
+
+#### 26. **🆕 Create Knowledge Entry**
+```
+POST /api/knowledge
+Content-Type: application/json
+Body: {
+  "companyId": 1,
+  "question": "Quy trình...",
+  "answer": "Trả lời...",
+  "keywords": ["quy trình", "nghỉ phép"],
+  "category": "HR",
+  "isActive": true
+}
+Response: { success: true, data: {...} }
+```
+
+#### 27. **🆕 Update Knowledge Entry**
+```
+PUT /api/knowledge/:id
+Content-Type: application/json
+Body: { ... (knowledge data) }
+Response: { success: true, data: {...} }
+```
+
+#### 28. **🆕 Delete Knowledge Entry**
+```
+DELETE /api/knowledge/:id
+Response: { success: true, message: "Knowledge deleted successfully" }
+```
+
+### 🔍 Debug and Analysis APIs
+
+#### 29. **🆕 Debug Search Algorithm**
+```
+POST /api/debug/search
+Content-Type: application/json
+Body: {
+  "question": "Sơ đồ chức năng ban tài chính"
+}
+
+Features:
+- Shows keyword extraction process
+- Document relevance scoring details
+- Deduplication information
+- Performance metrics
+
+Response: {
+  success: true,
+  query: "...",
+  keywords: [...],
+  results: [...]
+}
+```
+
+#### 30. **🆕 Analyze Specific Document**
+```
+GET /api/debug/docs/:id
+
+Provides detailed analysis:
+- Content quality assessment
+- Keyword density analysis
+- OCR confidence scores (if applicable)
+- Processing metadata
+
+Response: {
+  success: true,
+  analysis: {
+    contentLength: 1234,
+    wordCount: 567,
+    uniqueWords: 234,
+    avgWordsPerSentence: 12.5,
+    processingMethod: "OCR",
+    confidence: 0.85
+  }
+}
 ```
 
 ## 🎯 Cách sử dụng
@@ -258,12 +514,33 @@ PD-Knowledge/
 - Kiểm tra thư mục uploads có quyền ghi
 - Đảm bảo file là định dạng PDF
 
+## 📚 Tài liệu chi tiết
+
+### 📖 API Documentation Files
+- **[API_GUIDE.md](./API_GUIDE.md)** - Hướng dẫn chi tiết tất cả API endpoints với examples và error handling
+- **[API_QUICK_REFERENCE.md](./API_QUICK_REFERENCE.md)** - Bảng tra cứu nhanh tất cả APIs
+- **[examples.sh](./examples.sh)** - Script demo tương tác với tất cả APIs
+
+### 🚀 Cách sử dụng documentation
+```bash
+# Chạy tất cả API examples
+./examples.sh
+
+# Chạy examples cụ thể
+./examples.sh qa debug          # Chỉ Q&A và debug APIs
+./examples.sh constraints       # Chỉ constraint management
+
+# Xem help
+./examples.sh --help
+```
+
 ## 📞 Hỗ trợ
 
 Nếu gặp vấn đề, vui lòng:
 1. Kiểm tra logs server
 2. Xem lại cấu hình .env
 3. Đảm bảo tất cả dependencies đã được cài đặt
+4. Tham khảo **[API_GUIDE.md](./API_GUIDE.md)** để biết chi tiết về error handling
 
 ## 🔍 OCR Processing
 

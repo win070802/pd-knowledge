@@ -322,6 +322,53 @@ app.delete('/api/documents/:id', async (req, res) => {
   }
 });
 
+// Reprocess document with AI text correction
+app.post('/api/documents/:id/reprocess', async (req, res) => {
+  try {
+    const documentId = req.params.id;
+    const document = await db.getDocumentById(documentId);
+    
+    if (!document) {
+      return res.status(404).json({ success: false, error: 'Document not found' });
+    }
+
+    if (!document.content_text || document.content_text.trim().length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Document has no text content to reprocess' 
+      });
+    }
+
+    console.log(`🔧 Reprocessing document ${documentId} with AI text correction...`);
+    
+    // Apply text correction to existing content
+    const correctedText = await ocrService.correctOCRText(document.content_text);
+    
+    // Update document with corrected text
+    const updatedDocument = await db.updateDocument(documentId, {
+      content_text: correctedText
+    });
+
+    console.log(`✅ Document ${documentId} reprocessed successfully`);
+
+    res.json({
+      success: true,
+      message: 'Document reprocessed with AI text correction',
+      document: {
+        id: updatedDocument.id,
+        original_name: updatedDocument.original_name,
+        originalTextLength: document.content_text.length,
+        correctedTextLength: correctedText.length,
+        improvement: correctedText.length - document.content_text.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Error reprocessing document:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Constraint Management Endpoints
 
 // Get all constraints
@@ -741,6 +788,121 @@ app.delete('/api/knowledge/:id', async (req, res) => {
     }
   } catch (error) {
     console.error('Error deleting knowledge:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Debug endpoint for testing document search
+app.post('/api/debug/search', async (req, res) => {
+  try {
+    const { question } = req.body;
+    
+    if (!question) {
+      return res.status(400).json({ success: false, error: 'Question is required' });
+    }
+
+    console.log(`🔍 Debug search for: "${question}"`);
+    
+    // Extract keywords like the actual search does
+    const keywords = question.toLowerCase().split(/\s+/)
+      .filter(word => word.length > 2)
+      .slice(0, 5);
+    
+    console.log(`🔤 Keywords: ${keywords.join(', ')}`);
+    
+    const documents = await db.getDocuments();
+    const results = [];
+    
+    for (const doc of documents) {
+      if (!doc.content_text) continue;
+      
+      const content = doc.content_text.toLowerCase();
+      let relevanceScore = 0;
+      const matches = {};
+      
+      for (const keyword of keywords) {
+        const keywordMatches = (content.match(new RegExp(keyword, 'g')) || []).length;
+        relevanceScore += keywordMatches;
+        if (keywordMatches > 0) {
+          matches[keyword] = keywordMatches;
+        }
+      }
+      
+      if (relevanceScore > 0) {
+        results.push({
+          id: doc.id,
+          name: doc.original_name,
+          relevanceScore,
+          matches,
+          contentPreview: doc.content_text.substring(0, 200) + '...'
+        });
+      }
+    }
+    
+    results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+    
+    res.json({
+      success: true,
+      question,
+      keywords,
+      totalDocuments: documents.length,
+      matchingDocuments: results.length,
+      results: results.slice(0, 10) // Top 10 results
+    });
+
+  } catch (error) {
+    console.error('Error in debug search:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Simple debug endpoint for documents 25 and 26
+app.get('/api/debug/docs/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const documents = await db.getDocuments();
+    const specificDoc = documents.find(doc => doc.id == id);
+    
+    if (!specificDoc) {
+      return res.json({ 
+        success: false, 
+        error: `Document ${id} not found in getDocuments()`,
+        totalDocuments: documents.length,
+        documentIds: documents.map(d => d.id).sort((a, b) => a - b)
+      });
+    }
+    
+    // Test keyword matching manually
+    const keywords = ["chức", "năng", "ban", "tài", "chính"];
+    const content = specificDoc.content_text ? specificDoc.content_text.toLowerCase() : '';
+    const matches = {};
+    let totalScore = 0;
+    
+    for (const keyword of keywords) {
+      const keywordMatches = (content.match(new RegExp(keyword, 'g')) || []).length;
+      matches[keyword] = keywordMatches;
+      totalScore += keywordMatches;
+    }
+    
+    res.json({
+      success: true,
+      document: {
+        id: specificDoc.id,
+        name: specificDoc.original_name,
+        hasContent: !!specificDoc.content_text,
+        contentLength: specificDoc.content_text ? specificDoc.content_text.length : 0,
+        contentPreview: specificDoc.content_text ? specificDoc.content_text.substring(0, 200) : null
+      },
+      keywordAnalysis: {
+        keywords,
+        matches,
+        totalScore,
+        content: content.substring(0, 300)
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error in debug docs:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
