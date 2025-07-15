@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { debugSearch, debugDocument } = require('../controllers/debugController');
-const { checkFactoryReset, FactoryResetService } = require('../../factory-reset');
+const { checkFactoryReset, FactoryResetService } = require('../../scripts/factory-reset');
 const { authenticate, requireAdmin } = require('../middleware/auth');
 
 // Debug search endpoint (admin only)
