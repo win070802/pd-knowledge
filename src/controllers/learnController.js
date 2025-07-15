@@ -1,4 +1,5 @@
 const { db } = require('../../database');
+const { pool } = require('../config/database');
 const storageService = require('../../storage-service');
 
 // Learn from free text input
@@ -167,13 +168,20 @@ const learnDocumentCompany = async (req, res) => {
       // Extract meaningful patterns
       const patterns = extractFilenamePatterns(filenamePattern);
       
-      // Add patterns to company keywords
+      // Add patterns to company keywords (only update keywords, not other fields)
       const currentKeywords = company.keywords || [];
       const newKeywords = [...new Set([...currentKeywords, ...patterns])];
       
-      await db.updateCompany(company.id, {
-        keywords: newKeywords
-      });
+      // Only update keywords to avoid null constraint issues
+      const client = await pool.connect();
+      try {
+        await client.query(
+          'UPDATE companies SET keywords = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2',
+          [newKeywords, company.id]
+        );
+      } finally {
+        client.release();
+      }
 
       console.log(`📝 Learned patterns: ${patterns.join(', ')} for ${company.code}`);
     }
@@ -253,7 +261,6 @@ const getKnowledge = async (req, res) => {
 
 // Get knowledge with company information
 async function getKnowledgeWithCompany(filters, limit) {
-  const { pool } = require('../config/database');
   const client = await pool.connect();
   
   try {
