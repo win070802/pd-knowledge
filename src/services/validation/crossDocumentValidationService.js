@@ -1,5 +1,6 @@
 const EntityExtractionService = require('../ai/entityExtractionService');
 const { db } = require('../../../database');
+const { pool } = require('../../config/database');
 
 class CrossDocumentValidationService {
   constructor() {
@@ -179,7 +180,7 @@ class CrossDocumentValidationService {
   async storeDocumentEntities(documentId, entities) {
     try {
       // Store entities as JSON in document_metadata table
-      await db.query(
+      await pool.query(
         `INSERT INTO document_metadata (document_id, entities, created_at) 
          VALUES ($1, $2, NOW()) 
          ON CONFLICT (document_id) DO UPDATE SET 
@@ -203,7 +204,7 @@ class CrossDocumentValidationService {
       );
       
       // Store company metadata
-      await db.query(
+      await pool.query(
         `INSERT INTO company_metadata (company_id, metadata, created_at) 
          VALUES ($1, $2, NOW()) 
          ON CONFLICT (company_id) DO UPDATE SET 
@@ -223,7 +224,7 @@ class CrossDocumentValidationService {
   // Get company metadata
   async getCompanyMetadata(companyId) {
     try {
-      const result = await db.query(
+      const result = await pool.query(
         'SELECT metadata FROM company_metadata WHERE company_id = $1',
         [companyId]
       );
@@ -255,7 +256,7 @@ class CrossDocumentValidationService {
         params.push(companyId);
       }
       
-      const result = await db.query(query, params);
+      const result = await pool.query(query, params);
       
       const matches = [];
       for (const row of result.rows) {
