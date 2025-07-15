@@ -14,4 +14,9 @@ router.post('/summarize/:id', qaController.summarizeDocument);
 // Extract key information
 router.post('/extract', qaController.extractKeyInfo);
 
+// Conversation management
+router.get('/conversation/:sessionId/history', qaController.getConversationHistory);
+router.get('/conversation/:sessionId/stats', qaController.getConversationStats);
+router.delete('/conversation/:sessionId', qaController.endConversation);
+
 module.exports = router; 

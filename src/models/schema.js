@@ -107,6 +107,32 @@ async function initializeDatabase() {
       )
     `);
 
+    // Create conversations table for conversation context tracking
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id SERIAL PRIMARY KEY,
+        session_id VARCHAR(255) UNIQUE NOT NULL,
+        user_id VARCHAR(255),
+        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        context JSONB,
+        is_active BOOLEAN DEFAULT TRUE
+      )
+    `);
+
+    // Create conversation_messages table for individual Q&A in conversation
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS conversation_messages (
+        id SERIAL PRIMARY KEY,
+        conversation_id INTEGER REFERENCES conversations(id) ON DELETE CASCADE,
+        message_type VARCHAR(50) NOT NULL, -- 'question' or 'answer'
+        content TEXT NOT NULL,
+        relevant_documents JSONB,
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Insert default admin user if not exists
     const bcrypt = require('bcrypt');
     const existingAdmin = await client.query('SELECT id FROM users WHERE username = $1', ['admin']);
