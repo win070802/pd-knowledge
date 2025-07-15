@@ -375,10 +375,18 @@ Các INTENT types:
 - hybrid_search: Cần tìm trong cả documents + knowledge 
 - general_question: Câu hỏi chung chung
 
+QUAN TRỌNG - Các từ khóa chỉ hybrid_search:
+- "tóm tắt", "giải thích", "mô tả", "chi tiết về"
+- "quy trình", "quy định", "chính sách", "hướng dẫn"
+- "nội dung", "thông tin trong", "theo tài liệu"
+- "hệ thống", "cơ chế", "cách thức"
+
 Ví dụ phân tích:
 "Danh sách tài liệu PDH" → {"intent":"list_documents","target":"documents","company":"PDH","category":null,"confidence":95}
 "Team IT có mấy người?" → {"intent":"find_knowledge","target":"knowledge","company":"PDH","category":"IT","confidence":90}
 "Quy định về làm việc từ xa?" → {"intent":"hybrid_search","target":"both","company":null,"category":"HR","confidence":85}
+"Tóm tắt quy trình thanh toán" → {"intent":"hybrid_search","target":"both","company":"PDH","category":"Finance","confidence":90}
+"Giải thích chính sách bảo mật" → {"intent":"hybrid_search","target":"both","company":"PDH","category":"IT","confidence":85}
 
 Chỉ trả về JSON, không giải thích:`;
 

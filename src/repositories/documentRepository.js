@@ -96,10 +96,77 @@ class DocumentRepository {
   async searchDocuments(searchTerm) {
     const client = await pool.connect();
     try {
-      const result = await client.query(
-        'SELECT * FROM documents WHERE content_text ILIKE $1 ORDER BY upload_date DESC',
-        [`%${searchTerm}%`]
-      );
+      // Extract keywords from search term
+      const keywords = searchTerm.toLowerCase()
+        .replace(/[^\w\sàáảãạăắằẳẵặâấầẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/g, '')
+        .split(/\s+/)
+        .filter(word => word.length > 2)
+        .slice(0, 10); // Limit to 10 keywords
+
+      console.log(`📄 Searching with keywords:`, keywords);
+
+      if (keywords.length === 0) {
+        // Fallback to simple search
+        const result = await client.query(
+          'SELECT * FROM documents WHERE content_text ILIKE $1 ORDER BY upload_date DESC',
+          [`%${searchTerm}%`]
+        );
+        return result.rows;
+      }
+
+      // Build flexible search query
+      let query = `
+        SELECT *, 
+        (
+          CASE 
+            WHEN original_name ILIKE $1 THEN 100
+            ELSE 0
+          END +
+          CASE 
+            WHEN category ILIKE $1 THEN 80
+            ELSE 0
+          END
+      `;
+      
+      const params = [`%${searchTerm}%`];
+      
+      // Add keyword scoring
+      for (let i = 0; i < keywords.length; i++) {
+        const paramIndex = params.length + 1;
+        query += ` + CASE WHEN content_text ILIKE $${paramIndex} THEN 10 ELSE 0 END`;
+        query += ` + CASE WHEN original_name ILIKE $${paramIndex} THEN 20 ELSE 0 END`;
+        params.push(`%${keywords[i]}%`);
+      }
+      
+      query += `
+        ) as relevance_score
+        FROM documents 
+        WHERE (
+          content_text ILIKE $1 
+          OR original_name ILIKE $1 
+          OR category ILIKE $1
+      `;
+      
+      // Add OR conditions for keywords
+      for (let i = 0; i < keywords.length; i++) {
+        const paramIndex = 2 + i; // Start from param $2
+        query += ` OR content_text ILIKE $${paramIndex} OR original_name ILIKE $${paramIndex}`;
+      }
+      
+      query += `
+        )
+        ORDER BY relevance_score DESC, upload_date DESC
+        LIMIT 20
+      `;
+
+      console.log(`📄 Executing search query with ${params.length} parameters`);
+      const result = await client.query(query, params);
+      
+      console.log(`📄 Found ${result.rows.length} documents with relevance scores`);
+      result.rows.forEach(doc => {
+        console.log(`📄 ${doc.original_name} (score: ${doc.relevance_score})`);
+      });
+      
       return result.rows;
     } finally {
       client.release();

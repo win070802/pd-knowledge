@@ -475,7 +475,25 @@ Trả lời theo format JSON:
       const images = await this.convertPDFToImages(pdfPath, maxPages);
       
       if (images.length === 0) {
-        throw new Error('No images extracted from PDF');
+        console.log('⚠️  No images extracted from PDF - may be text-based PDF or conversion failed');
+        console.log('🔄 Attempting fallback to standard PDF parsing...');
+        
+        // Fallback: Try standard PDF parsing
+        try {
+          const fs = require('fs');
+          const pdfParse = require('pdf-parse');
+          const dataBuffer = fs.readFileSync(pdfPath);
+          const data = await pdfParse(dataBuffer);
+          
+          if (data.text && data.text.trim().length > 0) {
+            console.log(`✅ Fallback successful: extracted ${data.text.length} characters using standard parsing`);
+            return data.text;
+          }
+        } catch (fallbackError) {
+          console.error('❌ Fallback to standard PDF parsing failed:', fallbackError.message);
+        }
+        
+        throw new Error('No images extracted from PDF and fallback parsing failed. This may be an empty PDF or require manual processing.');
       }
 
       let allText = '';
@@ -490,25 +508,35 @@ Trả lời theo format JSON:
           allText += pageText.trim() + '\n';
         }
         
-        // Clean up image file
-        if (fs.existsSync(imagePath)) {
-          fs.unlinkSync(imagePath);
-        }
-      }
-
-      console.log(`✅ Vision API OCR completed. Extracted ${allText.length} characters`);
-      
-      // Apply AI-powered text correction
-      if (allText.trim().length > 0) {
-        const correctedText = await this.correctOCRText(allText);
-        return correctedText;
+        // Clean up temp image
+        fs.unlinkSync(imagePath);
       }
       
-      return allText;
-
+      console.log(`✅ Vision API extraction completed: ${allText.length} characters from ${images.length} pages`);
+      return allText.trim();
+      
     } catch (error) {
-      console.error('Error processing scanned PDF:', error);
-      throw error;
+      console.error('❌ Error in processScannedPDF:', error.message);
+      
+      // Enhanced fallback mechanism
+      console.log('🔄 Attempting enhanced fallback to standard PDF parsing...');
+      try {
+        const fs = require('fs');
+        const pdfParse = require('pdf-parse');
+        const dataBuffer = fs.readFileSync(pdfPath);
+        const data = await pdfParse(dataBuffer);
+        
+        if (data.text && data.text.trim().length > 0) {
+          console.log(`✅ Enhanced fallback successful: extracted ${data.text.length} characters`);
+          return data.text;
+        } else {
+          console.log('📄 PDF appears to be empty or contains only images without text');
+          throw new Error('PDF contains no extractable text - may be image-only document requiring manual processing');
+        }
+      } catch (fallbackError) {
+        console.error('❌ Enhanced fallback failed:', fallbackError.message);
+        throw new Error(`Vision API failed and fallback parsing failed: ${error.message}. Original error: ${fallbackError.message}`);
+      }
     }
   }
 
