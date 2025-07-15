@@ -15,24 +15,44 @@ if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir, { recursive: true });
 }
 
+// Configurable timeouts via environment variables
+const UPLOAD_TIMEOUT = parseInt(process.env.UPLOAD_TIMEOUT_MINUTES || '20') * 60 * 1000; // Default 20 minutes
+const API_TIMEOUT = parseInt(process.env.API_TIMEOUT_MINUTES || '10') * 60 * 1000; // Default 10 minutes
+const MAX_FILE_SIZE = process.env.MAX_FILE_SIZE || '100mb'; // Default 100MB
+
+console.log(`🕒 Timeout configuration:`);
+console.log(`   Upload timeout: ${UPLOAD_TIMEOUT / 60000} minutes`);
+console.log(`   API timeout: ${API_TIMEOUT / 60000} minutes`);
+console.log(`   Max file size: ${MAX_FILE_SIZE}`);
+
 // Basic middleware
 app.use(helmet());
 app.use(morgan('combined'));
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(express.json({ limit: MAX_FILE_SIZE }));
+app.use(express.urlencoded({ extended: true, limit: MAX_FILE_SIZE }));
 
-// Increase timeout for file uploads and processing
+// Dynamic timeout based on request type and file size
 app.use((req, res, next) => {
-  // Set timeout to 10 minutes for upload routes
+  let timeout = API_TIMEOUT; // Default timeout
+  
+  // Extended timeout for upload routes
   if (req.path.includes('/upload') || req.path.includes('/api/upload')) {
-    req.setTimeout(600000); // 10 minutes
-    res.setTimeout(600000);
-    console.log('🕒 Extended timeout for upload request');
-  } else {
-    req.setTimeout(300000); // 5 minutes for other routes
-    res.setTimeout(300000);
+    timeout = UPLOAD_TIMEOUT;
+    
+    // Extra timeout for large files (if Content-Length header available)
+    const contentLength = parseInt(req.headers['content-length'] || '0');
+    if (contentLength > 5 * 1024 * 1024) { // > 5MB
+      const extraTime = Math.min(contentLength / (1024 * 1024) * 60000, 600000); // 1 min per MB, max +10 min
+      timeout += extraTime;
+      console.log(`🕒 Large file detected (${(contentLength / 1024 / 1024).toFixed(1)}MB), extending timeout by ${(extraTime / 60000).toFixed(1)} minutes`);
+    }
+    
+    console.log(`🕒 Upload timeout set to ${(timeout / 60000).toFixed(1)} minutes`);
   }
+  
+  req.setTimeout(timeout);
+  res.setTimeout(timeout);
   next();
 });
 

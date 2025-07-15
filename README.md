@@ -10,7 +10,37 @@ Hệ thống quản lý kiến thức doanh nghiệp cho Tập đoàn Phát Đ�
 - **PDHH** - Phát Đạt Hospitality
 - **RH** - Realty Holdings
 
-## ⚡ Khởi động nhanh
+## ⚙️ Environment Variables
+
+### Timeout Configuration
+```bash
+# Upload timeout (minutes) - for large file processing
+UPLOAD_TIMEOUT_MINUTES=30          # Default: 20 minutes
+
+# API timeout (minutes) - for regular requests  
+API_TIMEOUT_MINUTES=15             # Default: 10 minutes
+
+# Maximum file size
+MAX_FILE_SIZE=150mb                # Default: 100mb
+```
+
+### Large File Handling
+- **Dynamic timeout**: Automatically extends timeout based on file size
+- **Smart processing**: Extra 1 minute per MB for files > 5MB
+- **Maximum extension**: +10 minutes for very large files
+- **Memory allocation**: 3GB RAM for heavy OCR processing
+
+### Database & Storage
+```bash
+# Database
+DATABASE_URL=postgresql://user:pass@host:port/db
+
+# Google Cloud Storage  
+GOOGLE_APPLICATION_CREDENTIALS_JSON='{"type":"service_account",...}'
+GCS_BUCKET_NAME=your-bucket-name
+```
+
+## 🚀 Khởi động nhanh
 
 ### 1. Cài đặt
 ```bash
