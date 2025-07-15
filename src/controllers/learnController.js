@@ -1,14 +1,13 @@
 const { db } = require('../../database');
 const { pool } = require('../config/database');
 const storageService = require('../../services/storage-service');
+const GeminiAiService = require('../services/ai/geminiAiService');
 
-// Learn from free text input
+// Learn from free text input - Fully AI-Autonomous
 const learnFromText = async (req, res) => {
   try {
     const { 
       text, 
-      companyCode, 
-      category, 
       question, 
       answer,
       keywords 
@@ -20,62 +19,297 @@ const learnFromText = async (req, res) => {
       });
     }
 
-    let company = null;
-    if (companyCode) {
-      company = await db.getCompanyByCode(companyCode.toUpperCase());
-      if (!company) {
-        return res.status(400).json({
-          error: `Company with code "${companyCode}" not found. Valid codes: PDH, PDI, PDE, PDHH, RH`
-        });
-      }
-    }
-
-    let finalQuestion, finalAnswer, finalKeywords;
+    let knowledgeEntries = [];
 
     if (text) {
-      // Process free text - AI will extract Q&A from it
-      finalQuestion = `Kiến thức về ${companyCode || 'công ty'}`;
-      finalAnswer = text;
-      finalKeywords = extractKeywords(text);
+      // Fully autonomous AI processing - no manual input needed
+      const aiService = new GeminiAiService();
+      console.log(`🤖 AI analyzing text autonomously: "${text.substring(0, 50)}..."`);
+      
+      const analysisResult = await analyzeTextAutonomously(text, aiService);
+      console.log(`🧠 AI autonomous analysis completed - generated ${analysisResult.entries.length} knowledge entries`);
+      
+             // Process each entry with detected company and category
+       for (const entry of analysisResult.entries) {
+         const processedEntry = await processAutonomousKnowledgeEntry(entry, analysisResult.detectedCompany, analysisResult.detectedCategory, aiService);
+         knowledgeEntries.push(processedEntry);
+       }
+      
     } else {
-      // Direct Q&A input
-      finalQuestion = question;
-      finalAnswer = answer;
-      finalKeywords = keywords || extractKeywords(question + ' ' + answer);
+      // Direct Q&A input (fallback for manual entry)
+      const finalKeywords = keywords || extractKeywords(question + ' ' + answer);
+      
+      const knowledge = await db.createKnowledge({
+        companyId: null, // Will be detected later if needed
+        question: question,
+        answer: answer,
+        keywords: finalKeywords,
+        category: 'General',
+        isActive: true
+      });
+      
+      knowledgeEntries.push(knowledge);
     }
 
-    // Save to knowledge base
-    const knowledge = await db.createKnowledge({
-      companyId: company ? company.id : null,
-      question: finalQuestion,
-      answer: finalAnswer,
-      keywords: finalKeywords,
-      category: category || 'General',
-      isActive: true
-    });
-
-    console.log(`📚 New knowledge added: ${finalQuestion.substring(0, 50)}...`);
+    console.log(`📚 AI autonomously processed and saved ${knowledgeEntries.length} knowledge entries`);
 
     res.status(201).json({
       success: true,
-      message: 'Knowledge successfully added to AI learning base',
-      knowledge: {
-        id: knowledge.id,
-        company: company ? company.code : null,
-        question: finalQuestion,
-        category: category || 'General',
-        keywordsCount: finalKeywords.length
-      }
+      message: `AI successfully analyzed and added ${knowledgeEntries.length} knowledge entries autonomously`,
+      analysis: {
+        detectedCompany: knowledgeEntries[0]?.company_detected || 'Not detected',
+        detectedCategory: knowledgeEntries[0]?.category || 'General',
+        entriesGenerated: knowledgeEntries.length,
+        hasHistoricalUpdates: knowledgeEntries.some(k => k.isHistoricalUpdate)
+      },
+      knowledge: knowledgeEntries.map(k => ({
+        id: k.id,
+        company: k.company_detected || null,
+        question: k.question,
+        answer: k.answer.length > 100 ? k.answer.substring(0, 100) + '...' : k.answer,
+        category: k.category,
+        keywordsCount: k.keywords?.length || 0,
+        isHistoricalUpdate: k.isHistoricalUpdate || false
+      }))
     });
 
   } catch (error) {
-    console.error('Error in learn API:', error);
+    console.error('Error in fully autonomous learn API:', error);
     res.status(500).json({
-      error: 'Failed to add knowledge',
+      error: 'Failed to autonomously process and add knowledge',
       details: error.message
     });
   }
 };
+
+// Fully autonomous AI text analysis - detects company, category, and generates Q&A
+async function analyzeTextAutonomously(text, aiService) {
+  try {
+    const autonomousPrompt = `
+Phân tích hoàn toàn tự động đoạn text sau. Bạn cần:
+1. TỰ ĐỘNG PHÁT HIỆN CÔNG TY từ text (PDH, PDI, PDE, PDHH, RH...)
+2. TỰ ĐỘNG PHÂN LOẠI CATEGORY (Leadership, HR, Finance, Operations, IT, Legal, General...)
+3. TẠO CÁC CẶP Q&A THÔNG MINH
+
+TEXT INPUT: "${text}"
+
+YÊU CẦU PHÂN TÍCH:
+- Detect company: Tìm mã công ty trong text (PDH, PDI, PDE, PDHH, RH...) hoặc null nếu không có
+- Classify category: Phân loại nội dung (Leadership=lãnh đạo/CXO, HR=nhân sự, Finance=tài chính, Operations=vận hành, IT=công nghệ, Legal=pháp lý, General=khác)
+- Generate Q&A: Tạo nhiều cặp câu hỏi-trả lời thông minh từ thông tin
+
+VÍ DỤ PHÂN TÍCH:
+Text: "Giám đốc CIO của PDH là ông Lê Nguyễn Hoàng Minh"
+→ Company: "PDH" (detected từ text)
+→ Category: "Leadership" (vì là thông tin về lãnh đạo CXO)
+→ Generate multiple Q&A pairs
+
+FORMAT TRẢ LỜI:
+{
+  "detectedCompany": "PDH",
+  "detectedCategory": "Leadership", 
+  "confidence": {
+    "company": 0.95,
+    "category": 0.90
+  },
+  "entries": [
+    {
+      "question": "Ai là CIO của PDH?",
+      "answer": "CIO của PDH là ông Lê Nguyễn Hoàng Minh",
+      "type": "person_role",
+      "keywords": ["CIO", "PDH", "Lê Nguyễn Hoàng Minh"],
+      "relatedQuestions": ["Lê Nguyễn Hoàng Minh là ai?"]
+    }
+  ]
+}
+
+CHỈ trả về JSON với format trên, không thêm text khác:`;
+
+    const result = await aiService.model.generateContent(autonomousPrompt);
+    const response = await result.response;
+    let analysisText = response.text().trim();
+    
+    // Clean up response
+    analysisText = analysisText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    
+    console.log(`🔍 Autonomous AI Analysis:`, analysisText);
+    
+    try {
+      const parsedResult = JSON.parse(analysisText);
+      
+      // Validate and set defaults
+      return {
+        detectedCompany: parsedResult.detectedCompany || null,
+        detectedCategory: parsedResult.detectedCategory || 'General',
+        confidence: parsedResult.confidence || { company: 0.5, category: 0.5 },
+        entries: Array.isArray(parsedResult.entries) ? parsedResult.entries : [parsedResult.entries || createFallbackEntry(text)]
+      };
+    } catch (parseError) {
+      console.warn('⚠️ Could not parse autonomous AI response, using fallback');
+      return createFallbackAutonomousResult(text);
+    }
+    
+  } catch (error) {
+    console.error('❌ Error in autonomous AI analysis:', error);
+    return createFallbackAutonomousResult(text);
+  }
+}
+
+// Fallback autonomous result if AI analysis fails
+function createFallbackAutonomousResult(text) {
+  return {
+    detectedCompany: null,
+    detectedCategory: 'General',
+    confidence: { company: 0.1, category: 0.5 },
+    entries: [createFallbackEntry(text)]
+  };
+}
+
+// Create fallback entry for failed analysis
+function createFallbackEntry(text) {
+  return {
+    question: `Kiến thức từ text`,
+    answer: text,
+    type: 'general',
+    keywords: extractKeywords(text),
+    relatedQuestions: []
+  };
+}
+
+// Process autonomous knowledge entry with detected company and category
+async function processAutonomousKnowledgeEntry(entry, detectedCompanyCode, detectedCategory, aiService) {
+  try {
+    // Resolve detected company from database
+    let company = null;
+    if (detectedCompanyCode) {
+      company = await db.getCompanyByCode(detectedCompanyCode.toUpperCase());
+      if (company) {
+        console.log(`✅ Detected company "${detectedCompanyCode}" resolved to: ${company.full_name}`);
+      } else {
+        console.log(`⚠️ Detected company "${detectedCompanyCode}" not found in database`);
+      }
+    }
+
+    // Check if this is an update to existing knowledge
+    const existingKnowledge = await findSimilarKnowledge(entry.question, company?.id);
+    
+    let finalEntry = {
+      companyId: company ? company.id : null,
+      question: entry.question,
+      answer: entry.answer,
+      keywords: Array.isArray(entry.keywords) ? entry.keywords : extractKeywords(entry.question + ' ' + entry.answer),
+      category: detectedCategory || 'General',
+      isActive: true
+    };
+
+    if (existingKnowledge && existingKnowledge.length > 0) {
+      // This is potentially an update - handle historical tracking
+      console.log(`🔄 Found ${existingKnowledge.length} similar knowledge entries, processing autonomous update...`);
+      
+      const historicalUpdate = await handleHistoricalUpdate(entry, existingKnowledge, aiService);
+      finalEntry.answer = historicalUpdate.answer;
+      finalEntry.isHistoricalUpdate = true;
+      
+      // Mark old entries as inactive
+      for (const oldEntry of existingKnowledge) {
+        await db.updateKnowledge(oldEntry.id, { isActive: false });
+      }
+    }
+
+    // Create new knowledge entry
+    const savedKnowledge = await db.createKnowledge(finalEntry);
+    savedKnowledge.isHistoricalUpdate = finalEntry.isHistoricalUpdate;
+    savedKnowledge.company_detected = detectedCompanyCode; // Store detected company for response
+    
+    // Create related questions as separate entries
+    if (entry.relatedQuestions && entry.relatedQuestions.length > 0) {
+      for (const relatedQ of entry.relatedQuestions) {
+        await db.createKnowledge({
+          companyId: company ? company.id : null,
+          question: relatedQ,
+          answer: entry.answer,
+          keywords: finalEntry.keywords,
+          category: detectedCategory || 'General',
+          isActive: true
+        });
+      }
+    }
+    
+    return savedKnowledge;
+    
+  } catch (error) {
+    console.error('❌ Error processing autonomous knowledge entry:', error);
+    throw error;
+  }
+}
+
+// Find similar existing knowledge
+async function findSimilarKnowledge(question, companyId) {
+  try {
+    const client = await pool.connect();
+    
+    try {
+      let query = `
+        SELECT * FROM knowledge_base 
+        WHERE is_active = true
+        AND question ILIKE $1
+      `;
+      const params = [`%${question.split(' ').slice(-3).join(' ')}%`]; // Search for key words
+      
+      if (companyId) {
+        query += ` AND company_id = $2`;
+        params.push(companyId);
+      }
+      
+      const result = await client.query(query, params);
+      return result.rows;
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('❌ Error finding similar knowledge:', error);
+    return [];
+  }
+}
+
+// Handle historical updates with AI assistance
+async function handleHistoricalUpdate(newEntry, existingEntries, aiService) {
+  try {
+    const updatePrompt = `
+Có thông tin mới cần cập nhật. Hãy tạo câu trả lời có lịch sử:
+
+THÔNG TIN CŨ:
+${existingEntries.map(e => `- ${e.answer}`).join('\n')}
+
+THÔNG TIN MỚI: ${newEntry.answer}
+
+YÊU CẦU:
+1. Tạo câu trả lời bao gồm cả thông tin hiện tại và lịch sử
+2. Sử dụng format: "Hiện tại là X. Trước đó là Y."
+3. Thông tin mới được ưu tiên (là thông tin hiện tại)
+4. Thông tin cũ thành lịch sử
+
+Ví dụ: "CIO của PDH hiện tại là ông Lê Nguyễn Hoàng Minh. Trước đó là ông Nguyễn Văn A."
+
+CHỈ trả về câu trả lời, không thêm text khác:`;
+
+    const result = await aiService.model.generateContent(updatePrompt);
+    const response = await result.response;
+    const updatedAnswer = response.text().trim();
+    
+    return {
+      answer: updatedAnswer,
+      hasHistory: true
+    };
+    
+  } catch (error) {
+    console.error('❌ Error creating historical update:', error);
+    return {
+      answer: newEntry.answer,
+      hasHistory: false
+    };
+  }
+}
 
 // Learn document-company mapping and reorganize file
 const learnDocumentCompany = async (req, res) => {
