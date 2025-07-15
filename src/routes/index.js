@@ -35,6 +35,7 @@ router.use('/api/debug', debugRoutes);
 
 // Learn API routes
 router.post('/api/learn', learnController.learnFromText);
+router.post('/api/learn/document-company', learnController.learnDocumentCompany);
 router.get('/api/learn', learnController.getKnowledge);
 
 module.exports = router; 

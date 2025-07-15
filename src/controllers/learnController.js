@@ -1,4 +1,5 @@
 const { db } = require('../../database');
+const storageService = require('../../storage-service');
 
 // Learn from free text input
 const learnFromText = async (req, res) => {
@@ -71,6 +72,132 @@ const learnFromText = async (req, res) => {
     res.status(500).json({
       error: 'Failed to add knowledge',
       details: error.message
+    });
+  }
+};
+
+// Learn document-company mapping and reorganize file
+const learnDocumentCompany = async (req, res) => {
+  try {
+    const { 
+      documentId,
+      filename, 
+      companyCode,
+      pattern // Optional: specific pattern to learn
+    } = req.body;
+
+    if (!companyCode) {
+      return res.status(400).json({
+        success: false,
+        error: 'Company code is required'
+      });
+    }
+
+    // Validate company
+    const company = await db.getCompanyByCode(companyCode.toUpperCase());
+    if (!company) {
+      return res.status(400).json({
+        success: false,
+        error: `Company with code "${companyCode}" not found. Valid codes: PDH, PDI`
+      });
+    }
+
+    let document = null;
+
+    // Find document by ID or filename
+    if (documentId) {
+      document = await db.getDocumentById(documentId);
+    } else if (filename) {
+      // Find document by original filename
+      const documents = await db.getDocuments();
+      document = documents.find(doc => 
+        doc.original_name === filename || 
+        doc.original_name.includes(filename) ||
+        filename.includes(doc.original_name)
+      );
+    }
+
+    if (!document) {
+      return res.status(404).json({
+        success: false,
+        error: `Document not found. Available documents: ${documentId ? 'Check document ID' : 'Check filename'}`
+      });
+    }
+
+    console.log(`📚 Learning: Document "${document.original_name}" belongs to ${company.code}`);
+
+    // Reorganize file if currently in UNKNOWN folder
+    let reorganizeResult = null;
+    if (!document.company_id || document.metadata?.companyCode === 'UNKNOWN') {
+      
+      console.log(`🔄 Reorganizing document from UNKNOWN to ${company.code}`);
+      
+      reorganizeResult = await storageService.reorganizeFileByCompany(
+        document.file_path,
+        document.filename,
+        company,
+        document.category
+      );
+
+      if (reorganizeResult) {
+        // Update document in database
+        await db.updateDocument(document.id, {
+          companyId: company.id,
+          filePath: reorganizeResult.path,
+          metadata: {
+            ...document.metadata,
+            companyCode: company.code,
+            storageUrl: reorganizeResult.url,
+            reorganizedAt: new Date().toISOString(),
+            reorganizedFrom: 'UNKNOWN',
+            learnedMapping: true
+          }
+        });
+
+        console.log(`✅ Document reorganized to ${company.code}/${document.category}/`);
+      }
+    } else {
+      console.log(`ℹ️ Document already assigned to company, updating mapping only`);
+    }
+
+    // Learn filename pattern for future auto-detection
+    if (pattern || document.original_name) {
+      const filenamePattern = pattern || document.original_name;
+      
+      // Extract meaningful patterns
+      const patterns = extractFilenamePatterns(filenamePattern);
+      
+      // Add patterns to company keywords
+      const currentKeywords = company.keywords || [];
+      const newKeywords = [...new Set([...currentKeywords, ...patterns])];
+      
+      await db.updateCompany(company.id, {
+        keywords: newKeywords
+      });
+
+      console.log(`📝 Learned patterns: ${patterns.join(', ')} for ${company.code}`);
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully learned that "${document.original_name}" belongs to ${company.code}`,
+      document: {
+        id: document.id,
+        originalName: document.original_name,
+        previousCompany: document.metadata?.companyCode || 'UNKNOWN',
+        newCompany: company.code,
+        category: document.category,
+        reorganized: !!reorganizeResult,
+        newPath: reorganizeResult ? reorganizeResult.path : document.file_path
+      },
+      learnedPatterns: pattern ? extractFilenamePatterns(pattern) : extractFilenamePatterns(document.original_name)
+    });
+
+  } catch (error) {
+    console.error('Error in learnDocumentCompany:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
     });
   }
 };
@@ -190,7 +317,42 @@ function extractKeywords(text) {
   return [...new Set(words)].slice(0, 10);
 }
 
+// Extract meaningful patterns from filename for learning
+function extractFilenamePatterns(filename) {
+  const patterns = [];
+  
+  // Extract common patterns
+  const lowerFilename = filename.toLowerCase();
+  
+  // Pattern 1: Prefix patterns (QT.01, PDI-XX, etc.)
+  const prefixMatch = filename.match(/^([A-Z]{2,4}[\.\-_]?\d*)/i);
+  if (prefixMatch) {
+    patterns.push(prefixMatch[1].toLowerCase());
+  }
+  
+  // Pattern 2: Specific keywords
+  const keywords = [
+    'qt', 'quy trinh', 'quy dinh', 'lsx', 'nhl', 
+    'soan', 'chuyen', 'luu', 'van ban'
+  ];
+  
+  keywords.forEach(keyword => {
+    if (lowerFilename.includes(keyword)) {
+      patterns.push(keyword);
+    }
+  });
+  
+  // Pattern 3: Date patterns (200524 = DDMMYY)
+  const dateMatch = filename.match(/(\d{6})/);
+  if (dateMatch) {
+    patterns.push('date_pattern');
+  }
+  
+  return [...new Set(patterns)]; // Remove duplicates
+}
+
 module.exports = {
   learnFromText,
-  getKnowledge
+  getKnowledge,
+  learnDocumentCompany
 }; 
