@@ -166,21 +166,17 @@ class GeminiService {
     return false;
   }
 
-  // Process document listing questions
-  async processDocumentListQuestion(question, startTime) {
+  // Process company listing questions  
+  async processCompanyListQuestion(question, startTime) {
     try {
-      console.log(`📋 Processing document listing question: ${question}`);
+      console.log(`🏢 Processing company listing question: ${question}`);
       
-      // Extract company from question (default to PDH if not specified)
-      const company = this.extractCompanyFromQuestion(question) || 'PDH';
-      console.log(`🏢 Target company: ${company}`);
+      // Get all companies from database
+      const companies = await db.getCompanies();
+      console.log(`🏢 Found ${companies.length} companies in database`);
       
-      // Get documents for the company
-      const documents = await db.getDocumentsByCompany(company);
-      console.log(`📄 Found ${documents.length} documents for ${company}`);
-      
-      if (documents.length === 0) {
-        const answer = `Hiện tại chưa có quy định hoặc quy trình nào được upload cho công ty ${company}. Vui lòng upload tài liệu để có thể trả lời câu hỏi này.`;
+      if (companies.length === 0) {
+        const answer = 'Hiện tại chưa có thông tin về các công ty trong hệ thống. Vui lòng liên hệ quản trị viên để bổ sung thông tin.';
         const responseTime = Date.now() - startTime;
         
         await db.createQuestion({
@@ -198,48 +194,195 @@ class GeminiService {
         };
       }
       
-      // Group documents by category
-      const categorizedDocs = {};
-      documents.forEach(doc => {
-        const category = doc.category || 'Khác';
-        if (!categorizedDocs[category]) {
-          categorizedDocs[category] = [];
+      // Generate formatted answer with company information
+      let answer = `🏢 **Danh sách các công ty trong Tập đoàn Phát Đạt:**\n\n`;
+      
+      companies.forEach((company, index) => {
+        answer += `**${index + 1}. ${company.code} - ${company.full_name}**\n`;
+        if (company.description) {
+          answer += `   📄 ${company.description}\n`;
         }
-        categorizedDocs[category].push(doc);
-      });
-      
-      // Generate formatted answer
-      let answer = `📋 **Các quy định và quy trình hiện tại của ${company}:**\n\n`;
-      
-      Object.keys(categorizedDocs).forEach(category => {
-        answer += `📂 **${category}:**\n`;
-        categorizedDocs[category].forEach(doc => {
-          answer += `• ${doc.original_name}\n`;
-        });
+        if (company.chairman) {
+          answer += `   👑 Chủ tịch: ${company.chairman}\n`;
+        }
+        if (company.ceo) {
+          answer += `   💼 CEO: ${company.ceo}\n`;
+        }
         answer += '\n';
       });
       
-      answer += `\n💡 *Tổng cộng: ${documents.length} tài liệu*\n`;
-      answer += `📅 *Cập nhật gần nhất: ${new Date().toLocaleDateString('vi-VN')}*`;
-      
+      answer += `💡 *Tổng cộng: ${companies.length} công ty*\n\n`;
+      answer += `📋 **Bạn có thể hỏi tiếp:**\n`;
+      answer += `• "Danh sách tài liệu của [tên công ty]"\n`;
+      answer += `• "Thông tin chi tiết về công ty [mã công ty]"\n`;
+      answer += `• "[Mã công ty] có những quy định gì?"\n`;
+
       const responseTime = Date.now() - startTime;
       
       await db.createQuestion({
         question,
         answer,
-        documentIds: documents.map(doc => doc.id),
+        documentIds: [],
         responseTime
       });
       
+      // Create relevant documents array (companies as "documents")
+      const relevantDocuments = companies.map((company, index) => ({
+        id: company.id,
+        name: `${company.code} - ${company.full_name}`,
+        type: 'company',
+        relevanceScore: 10 - index
+      }));
+      
       return {
         answer,
-        documentIds: documents.map(doc => doc.id),
-        relevantDocuments: documents.map(doc => ({
-          id: doc.id,
-          name: doc.original_name,
-          category: doc.category,
-          uploadDate: doc.upload_date
-        })),
+        documentIds: [],
+        relevantDocuments,
+        responseTime
+      };
+
+    } catch (error) {
+      console.error('❌ Error processing company list question:', error);
+      throw error;
+    }
+  }
+
+  // Process document listing questions (updated to handle ALL companies)
+  async processDocumentListQuestion(question, intent, startTime) {
+    try {
+      console.log(`📋 Processing document listing question: ${question}`);
+      
+      // Determine target companies
+      let targetCompanies = [];
+      if (intent.company === 'ALL' || question.toLowerCase().includes('tất cả') || question.toLowerCase().includes('toàn bộ')) {
+        // Get all companies
+        const allCompanies = await db.getCompanies();
+        targetCompanies = allCompanies.map(c => c.code);
+        console.log(`📋 Target: ALL companies (${targetCompanies.join(', ')})`);
+      } else {
+        // Single company
+        const company = intent.company || this.extractCompanyFromQuestion(question) || 'PDH';
+        targetCompanies = [company];
+        console.log(`🏢 Target company: ${company}`);
+      }
+      
+      // Get documents for target companies
+      const allDocuments = [];
+      const companyDocumentCounts = {};
+      
+      for (const companyCode of targetCompanies) {
+        const documents = await db.getDocumentsByCompany(companyCode);
+        console.log(`📄 Found ${documents.length} documents for ${companyCode}`);
+        
+        companyDocumentCounts[companyCode] = documents.length;
+        allDocuments.push(...documents.map(doc => ({ ...doc, companyCode })));
+      }
+      
+      if (allDocuments.length === 0) {
+        const companyList = targetCompanies.length > 1 ? 'các công ty trong tập đoàn' : targetCompanies[0];
+        const answer = `Hiện tại chưa có quy định hoặc quy trình nào được upload cho ${companyList}. Vui lòng upload tài liệu để có thể trả lời câu hỏi này.`;
+        const responseTime = Date.now() - startTime;
+        
+        await db.createQuestion({
+          question,
+          answer,
+          documentIds: [],
+          responseTime
+        });
+        
+        return {
+          answer,
+          documentIds: [],
+          relevantDocuments: [],
+          responseTime
+        };
+      }
+      
+      // Generate formatted answer
+      let answer = '';
+      
+      if (targetCompanies.length > 1) {
+        // Multi-company listing
+        answer = `📋 **Tổng hợp tài liệu của Tập đoàn Phát Đạt:**\n\n`;
+        
+        for (const companyCode of targetCompanies) {
+          const companyDocs = allDocuments.filter(doc => doc.companyCode === companyCode);
+          
+          if (companyDocs.length > 0) {
+            answer += `🏢 **${companyCode}** (${companyDocs.length} tài liệu):\n`;
+            
+            // Group by category
+            const categorizedDocs = {};
+            companyDocs.forEach(doc => {
+              const category = doc.category || 'Khác';
+              if (!categorizedDocs[category]) {
+                categorizedDocs[category] = [];
+              }
+              categorizedDocs[category].push(doc);
+            });
+            
+            Object.keys(categorizedDocs).forEach(category => {
+              answer += `  📂 **${category}:**\n`;
+              categorizedDocs[category].forEach(doc => {
+                answer += `    • ${doc.original_name}\n`;
+              });
+            });
+            answer += '\n';
+          }
+        }
+        
+        answer += `💡 *Tổng cộng: ${allDocuments.length} tài liệu từ ${targetCompanies.length} công ty*\n`;
+      } else {
+        // Single company listing (existing logic)
+        const companyCode = targetCompanies[0];
+        const companyDocs = allDocuments.filter(doc => doc.companyCode === companyCode);
+        
+        // Group documents by category
+        const categorizedDocs = {};
+        companyDocs.forEach(doc => {
+          const category = doc.category || 'Khác';
+          if (!categorizedDocs[category]) {
+            categorizedDocs[category] = [];
+          }
+          categorizedDocs[category].push(doc);
+        });
+        
+        answer = `📋 **Các quy định và quy trình hiện tại của ${companyCode}:**\n\n`;
+        
+        Object.keys(categorizedDocs).forEach(category => {
+          answer += `📂 **${category}:**\n`;
+          categorizedDocs[category].forEach(doc => {
+            answer += `• ${doc.original_name}\n`;
+          });
+          answer += '\n';
+        });
+        
+        answer += `💡 *Tổng cộng: ${companyDocs.length} tài liệu*\n`;
+      }
+      
+      answer += `\n❓ *Bạn có thể hỏi chi tiết về bất kỳ quy định hoặc quy trình nào ở trên.*`;
+
+      const responseTime = Date.now() - startTime;
+      
+      await db.createQuestion({
+        question,
+        answer,
+        documentIds: allDocuments.map(doc => doc.id),
+        responseTime
+      });
+      
+      // Create relevant documents array for response
+      const relevantDocuments = allDocuments.map((doc, index) => ({
+        id: doc.id,
+        name: targetCompanies.length > 1 ? `[${doc.companyCode}] ${doc.original_name}` : doc.original_name,
+        type: 'document',
+        relevanceScore: 10 - Math.floor(index / 2) // Decrease score gradually
+      }));
+      
+      return {
+        answer,
+        documentIds: allDocuments.map(doc => doc.id),
+        relevantDocuments,
         responseTime
       };
       
@@ -370,6 +513,7 @@ Hãy phân tích:
 5. CONFIDENCE: Độ tin cậy (0-100)
 
 Các INTENT types:
+- list_companies: Muốn xem danh sách các công ty trong tập đoàn
 - list_documents: Muốn xem danh sách, liệt kê tài liệu/file
 - find_knowledge: Hỏi về thông tin cụ thể đã học (nhân sự, quy trình...)
 - hybrid_search: Cần tìm trong cả documents + knowledge 
@@ -382,7 +526,10 @@ QUAN TRỌNG - Các từ khóa chỉ hybrid_search:
 - "hệ thống", "cơ chế", "cách thức"
 
 Ví dụ phân tích:
+"Danh sách các công ty trong tập đoàn" → {"intent":"list_companies","target":"companies","company":null,"category":null,"confidence":95}
+"Có những công ty nào?" → {"intent":"list_companies","target":"companies","company":null,"category":null,"confidence":90}
 "Danh sách tài liệu PDH" → {"intent":"list_documents","target":"documents","company":"PDH","category":null,"confidence":95}
+"Danh sách tất cả tài liệu" → {"intent":"list_documents","target":"documents","company":"ALL","category":null,"confidence":90}
 "Team IT có mấy người?" → {"intent":"find_knowledge","target":"knowledge","company":"PDH","category":"IT","confidence":90}
 "Quy định về làm việc từ xa?" → {"intent":"hybrid_search","target":"both","company":null,"category":"HR","confidence":85}
 "Tóm tắt quy trình thanh toán" → {"intent":"hybrid_search","target":"both","company":"PDH","category":"Finance","confidence":90}
@@ -457,9 +604,13 @@ Chỉ trả về JSON, không giải thích:`;
     const startTime = Date.now();
     
     switch (intent.intent) {
+      case 'list_companies':
+        console.log(`🏢 Routing to company listing`);
+        return await this.processCompanyListQuestion(question, startTime);
+        
       case 'list_documents':
         console.log(`📋 Routing to document listing`);
-          return await this.processDocumentListQuestion(question, startTime);
+        return await this.processDocumentListQuestion(question, intent, startTime);
         
       case 'find_knowledge':
         console.log(`🧠 Routing to knowledge search`);
