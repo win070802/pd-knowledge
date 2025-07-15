@@ -1,4 +1,4 @@
-const geminiService = require('../../gemini');
+const geminiService = require('../../services/gemini');
 
 // Get all constraints
 const getConstraints = async (req, res) => {

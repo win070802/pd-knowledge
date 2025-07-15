@@ -72,7 +72,7 @@ app.use('*', notFoundHandler);
 async function startServer() {
   try {
     // Check for factory reset first
-    const { checkFactoryReset } = require('./factory-reset');
+    const { checkFactoryReset } = require('./scripts/factory-reset');
     const wasReset = await checkFactoryReset();
     
     // Initialize database (or reinitialize if reset was performed)

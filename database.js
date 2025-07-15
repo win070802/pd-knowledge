@@ -4,6 +4,7 @@ const companyRepository = require('./src/repositories/companyRepository');
 const questionRepository = require('./src/repositories/questionRepository');
 const sensitiveRuleRepository = require('./src/repositories/sensitiveRuleRepository');
 const knowledgeRepository = require('./src/repositories/knowledgeRepository');
+const userRepository = require('./src/repositories/userRepository');
 
 // Main database interface that delegates to appropriate repositories
 const db = {
@@ -43,7 +44,16 @@ const db = {
   getKnowledgeByCompany: knowledgeRepository.getKnowledgeByCompany.bind(knowledgeRepository),
   searchKnowledge: knowledgeRepository.searchKnowledge.bind(knowledgeRepository),
   updateKnowledge: knowledgeRepository.updateKnowledge.bind(knowledgeRepository),
-  deleteKnowledge: knowledgeRepository.deleteKnowledge.bind(knowledgeRepository)
+  deleteKnowledge: knowledgeRepository.deleteKnowledge.bind(knowledgeRepository),
+
+  // User operations
+  createUser: userRepository.createUser.bind(userRepository),
+  getUserByUsername: userRepository.getUserByUsername.bind(userRepository),
+  getUserById: userRepository.getUserById.bind(userRepository),
+  getUsers: userRepository.getUsers.bind(userRepository),
+  validatePassword: userRepository.validatePassword.bind(userRepository),
+  updateUser: userRepository.updateUser.bind(userRepository),
+  deactivateUser: userRepository.deactivateUser.bind(userRepository)
 };
 
 module.exports = { initializeDatabase, db }; 

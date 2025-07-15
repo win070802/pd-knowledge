@@ -1,8 +1,8 @@
-const { db } = require('./database');
-const ConstraintsService = require('./src/services/constraints/constraintsService');
-const DocumentSearchService = require('./src/services/search/documentSearchService');
-const ContentClassifier = require('./src/utils/content/contentClassifier');
-const GeminiAiService = require('./src/services/ai/geminiAiService');
+const { db } = require('../database');
+const ConstraintsService = require('../src/services/constraints/constraintsService');
+const DocumentSearchService = require('../src/services/search/documentSearchService');
+const ContentClassifier = require('../src/utils/content/contentClassifier');
+const GeminiAiService = require('../src/services/ai/geminiAiService');
 
 class GeminiService {
   constructor() {

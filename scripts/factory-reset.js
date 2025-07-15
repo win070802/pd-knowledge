@@ -1,4 +1,4 @@
-const { db } = require('./database');
+const { db } = require('../database');
 const fs = require('fs');
 const path = require('path');
 const { Storage } = require('@google-cloud/storage');
@@ -75,16 +75,18 @@ class FactoryResetService {
     console.log('🗃️ Clearing database tables...');
     
     try {
-      const { pool } = require('./src/config/database');
+      const { pool } = require('../src/config/database');
       const client = await pool.connect();
 
       // Drop tables in correct order (respecting foreign keys)
       const dropQueries = [
         'DROP TABLE IF EXISTS questions CASCADE;',
         'DROP TABLE IF EXISTS knowledge_base CASCADE;',
+        'DROP TABLE IF EXISTS document_chunks CASCADE;',
         'DROP TABLE IF EXISTS documents CASCADE;',
         'DROP TABLE IF EXISTS companies CASCADE;',
-        'DROP TABLE IF EXISTS sensitive_rules CASCADE;'
+        'DROP TABLE IF EXISTS sensitive_rules CASCADE;',
+        'DROP TABLE IF EXISTS users CASCADE;'
       ];
 
       for (const query of dropQueries) {
@@ -181,7 +183,7 @@ class FactoryResetService {
     
     try {
       // Use existing database initialization
-      const { initializeDatabase } = require('./database');
+      const { initializeDatabase } = require('../database');
       await initializeDatabase();
       console.log('✅ Database schema reinitialized');
     } catch (error) {

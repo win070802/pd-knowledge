@@ -5,6 +5,24 @@ async function initializeDatabase() {
   const client = await pool.connect();
   
   try {
+    // Create users table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        full_name VARCHAR(255) NOT NULL,
+        phone VARCHAR(20),
+        birth_date DATE,
+        position VARCHAR(255),
+        location VARCHAR(255),
+        role VARCHAR(20) DEFAULT 'admin',
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Create companies table
     await client.query(`
       CREATE TABLE IF NOT EXISTS companies (
@@ -88,6 +106,28 @@ async function initializeDatabase() {
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+
+    // Insert default admin user if not exists
+    const bcrypt = require('bcrypt');
+    const existingAdmin = await client.query('SELECT id FROM users WHERE username = $1', ['admin']);
+    
+    if (existingAdmin.rows.length === 0) {
+      const hashedPassword = await bcrypt.hash('Admin@123123', 10);
+      await client.query(`
+        INSERT INTO users (username, password, full_name, phone, birth_date, position, location, role) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `, [
+        'admin',
+        hashedPassword,
+        'Trần Minh Khôi',
+        '0988204060',
+        '2002-08-07',
+        'Nhân viên công nghệ thông tin',
+        'Hồ Chí Minh, Việt Nam',
+        'admin'
+      ]);
+      console.log('✅ Default admin user created: admin/Admin@123123');
+    }
 
     console.log('Database schema initialized successfully');
   } catch (error) {

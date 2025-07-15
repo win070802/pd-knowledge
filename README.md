@@ -54,16 +54,33 @@ cp .env.example .env
 export $(cat .env | grep -v '#' | xargs) && PORT=3000 node server.js
 ```
 
-### 3. Test API
+### 3. Đăng nhập Admin
 ```bash
-# Upload file
-curl -X POST http://localhost:3000/api/upload -F 'document=@file.pdf'
+# Đăng nhập để lấy token
+curl -X POST http://localhost:3000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username": "admin", "password": "Admin@123123"}'
 
-# Hỏi đáp
-curl -X POST http://localhost:3000/api/ask -H 'Content-Type: application/json' -d '{"question": "Quy định nghỉ phép của PDH?"}'
+# Lưu token từ response để sử dụng cho các API cần quyền admin
+```
 
-# Dạy AI
-curl -X POST http://localhost:3000/api/learn -H 'Content-Type: application/json' -d '{"question": "Chính sách nghỉ phép", "answer": "PDH nghỉ 12 buổi/năm"}'
+### 4. Test API
+```bash
+# Hỏi đáp (public - không cần đăng nhập)
+curl -X POST http://localhost:3000/api/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"question": "Quy định nghỉ phép của PDH?"}'
+
+# Upload file (cần admin - thêm Authorization header)
+curl -X POST http://localhost:3000/api/upload \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -F 'document=@file.pdf'
+
+# Dạy AI (cần admin)
+curl -X POST http://localhost:3000/api/learn \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"question": "Chính sách nghỉ phép", "answer": "PDH nghỉ 12 buổi/năm"}'
 ```
 
 ## 🚀 Tính năng chính
@@ -85,28 +102,49 @@ curl -X POST http://localhost:3000/api/learn -H 'Content-Type: application/json'
 - **Company-specific** knowledge base
 - **Vietnamese support** với keyword extraction
 
+## 🔐 Authentication System
+
+### Admin mặc định:
+- **Username**: `admin`
+- **Password**: `Admin@123123`
+- **Thông tin**: Trần Minh Khôi, 0988204060, IT Hồ Chí Minh
+
+### Phân quyền:
+- **Public APIs**: Hỏi đáp, tìm kiếm (không cần đăng nhập)
+- **Admin APIs**: Upload, delete, manage (cần đăng nhập admin)
+
+📚 **Chi tiết**: Xem [AUTHENTICATION_GUIDE.md](./AUTHENTICATION_GUIDE.md)
+
 ## 🔧 API Endpoints
 
-| Method | Endpoint | Mô tả |
-|--------|----------|-------|
-| POST | `/api/upload` | Upload PDF (field: `document`) |
-| POST | `/api/ask` | Hỏi đáp với AI |
-| POST | `/api/learn` | Dạy AI kiến thức mới |
-| GET | `/api/search?q=term` | Tìm kiếm documents |
-| GET | `/api/constraints` | Xem constraints |
+| Method | Endpoint | Mô tả | Quyền |
+|--------|----------|-------|-------|
+| POST | `/api/auth/login` | Đăng nhập | Public |
+| POST | `/api/ask` | Hỏi đáp với AI | Public |
+| GET | `/api/search?q=term` | Tìm kiếm documents | Public |
+| POST | `/api/upload` | Upload PDF | Admin |
+| POST | `/api/learn` | Dạy AI kiến thức mới | Admin |
+| DELETE | `/api/documents/:id` | Xóa tài liệu | Admin |
+| GET | `/api/constraints` | Xem constraints | Public |
 
 ## 📁 Cấu trúc project
 ```
-├── server.js              # Main server
-├── src/
-│   ├── controllers/        # API controllers
-│   ├── services/          # Business logic
-│   ├── repositories/      # Database layer
-│   └── routes/           # API routes
-├── storage-service.js     # File upload logic
-├── gemini.js             # AI service
-└── database.js           # Database config
+PD-Knowledge/
+├── 📁 docs/              # Documentation files
+├── 📁 scripts/           # Scripts, tests, migration
+├── 📁 config/            # Configuration files
+├── 📁 services/          # Service modules (AI, storage, OCR)
+├── 📁 data/              # Data files, keys, training data
+├── 📁 src/               # Source code
+│   ├── controllers/      # API controllers
+│   ├── middleware/       # Auth & security
+│   ├── repositories/     # Database layer
+│   └── routes/          # API routes
+├── server.js            # Main application entry
+└── database.js          # Database interface
 ```
+
+📚 **Chi tiết**: Xem [docs/PROJECT_STRUCTURE.md](./docs/PROJECT_STRUCTURE.md)
 
 ## 🛠️ Requirements
 - Node.js 18+

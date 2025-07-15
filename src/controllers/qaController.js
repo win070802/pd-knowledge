@@ -1,5 +1,5 @@
 const { db } = require('../../database');
-const geminiService = require('../../gemini');
+const geminiService = require('../../services/gemini');
 
 // Ask question
 const askQuestion = async (req, res) => {

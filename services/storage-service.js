@@ -1,7 +1,7 @@
 const { Storage } = require('@google-cloud/storage');
 const fs = require('fs');
 const path = require('path');
-const { db } = require('./database');
+const { db } = require('../database');
 
 class StorageService {
   constructor() {

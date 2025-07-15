@@ -3,7 +3,7 @@ const { convert } = require('pdf2pic');
 const fs = require('fs');
 const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { db } = require('./database');
+const { db } = require('../database');
 require('dotenv').config();
 
 class VisionOCRService {

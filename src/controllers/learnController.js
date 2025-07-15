@@ -1,6 +1,6 @@
 const { db } = require('../../database');
 const { pool } = require('../config/database');
-const storageService = require('../../storage-service');
+const storageService = require('../../services/storage-service');
 
 // Learn from free text input
 const learnFromText = async (req, res) => {

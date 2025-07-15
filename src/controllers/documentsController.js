@@ -17,7 +17,7 @@ try {
   visionOCRService = require('../../vision-ocr-service-demo');
 }
 
-const storageService = require('../../storage-service');
+const storageService = require('../../services/storage-service');
 
 // Get all documents
 const getDocuments = async (req, res) => {

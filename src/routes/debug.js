@@ -2,15 +2,16 @@ const express = require('express');
 const router = express.Router();
 const { debugSearch, debugDocument } = require('../controllers/debugController');
 const { checkFactoryReset, FactoryResetService } = require('../../factory-reset');
+const { authenticate, requireAdmin } = require('../middleware/auth');
 
-// Debug search endpoint
-router.post('/search', debugSearch);
+// Debug search endpoint (admin only)
+router.post('/search', authenticate, requireAdmin, debugSearch);
 
-// Debug document by ID
-router.get('/document/:id', debugDocument);
+// Debug document by ID (admin only)
+router.get('/document/:id', authenticate, requireAdmin, debugDocument);
 
-// System info endpoint
-router.get('/system-info', (req, res) => {
+// System info endpoint (admin only)
+router.get('/system-info', authenticate, requireAdmin, (req, res) => {
   try {
     const envVars = {
       NODE_ENV: process.env.NODE_ENV,
@@ -58,11 +59,11 @@ router.get('/system-info', (req, res) => {
   }
 });
 
-// Reload constraints endpoint
-router.post('/reload-constraints', (req, res) => {
+// Reload constraints endpoint (admin only)
+router.post('/reload-constraints', authenticate, requireAdmin, (req, res) => {
   try {
     // Force reload constraints
-    delete require.cache[require.resolve('../../constraints.json')];
+    delete require.cache[require.resolve('../../config/constraints.json')];
     
     res.json({
       success: true,
@@ -77,8 +78,8 @@ router.post('/reload-constraints', (req, res) => {
   }
 });
 
-// Factory Reset API endpoint
-router.post('/factory-reset', async (req, res) => {
+// Factory Reset API endpoint (admin only - DANGEROUS)
+router.post('/factory-reset', authenticate, requireAdmin, async (req, res) => {
   try {
     console.log('🚨 Factory Reset API called');
     
@@ -126,8 +127,8 @@ router.post('/factory-reset', async (req, res) => {
   }
 });
 
-// Factory Reset Status
-router.get('/factory-reset-status', (req, res) => {
+// Factory Reset Status (admin only)
+router.get('/factory-reset-status', authenticate, requireAdmin, (req, res) => {
   const resetEnabled = process.env.FACTORY_RESET === 'true';
   
   res.json({

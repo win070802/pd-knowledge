@@ -100,7 +100,7 @@ class VisionAPITester {
       console.log(`\n📝 Testing: ${testCase.name}`);
       
       try {
-        const visionOCRService = require('./vision-ocr-service');
+        const visionOCRService = require('../services/vision-ocr-service');
         const result = await visionOCRService.classifyDocumentContent(testCase.content, testCase.filename);
         
         console.log(`Result: ${result.accept ? 'ACCEPT' : 'REJECT'} - Category: ${result.category}`);
@@ -132,7 +132,7 @@ class VisionAPITester {
     console.log('\n🔍 Testing Duplicate Detection...');
     
     try {
-      const visionOCRService = require('./vision-ocr-service');
+      const visionOCRService = require('../services/vision-ocr-service');
       
       // Test duplicate detection
       const text1 = 'QUY ĐỊNH VỀ NGHỈ PHÉP CÔNG TY PHÁT ĐẠT\nNhân viên được nghỉ phép 12 ngày/năm';
@@ -166,7 +166,7 @@ class VisionAPITester {
     console.log('\n🔍 Testing Document Structure Analysis...');
     
     try {
-      const visionOCRService = require('./vision-ocr-service');
+      const visionOCRService = require('../services/vision-ocr-service');
       
       const testDocument = `
 QUY TRÌNH TUYỂN DỤNG CÔNG TY PHÁT ĐẠT

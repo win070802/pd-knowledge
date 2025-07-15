@@ -1,4 +1,4 @@
-const { pool } = require('./src/config/database');
+const { pool } = require('../src/config/database');
 
 // Comprehensive database migration script for production
 async function migrateDatabase() {
