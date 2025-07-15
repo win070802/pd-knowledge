@@ -9,6 +9,23 @@ router.post('/search', debugSearch);
 // Debug document - test document processing
 router.post('/document', debugDocument);
 
+const reloadConstraints = async (req, res) => {
+  try {
+    const geminiService = require('../../gemini');
+    const newConstraints = geminiService.constraintsService.reloadConstraints();
+    
+    res.json({
+      success: true,
+      message: 'Constraints reloaded successfully',
+      constraintsCount: Object.keys(newConstraints.commonQuestions || {}).length,
+      companiesCount: Object.keys(newConstraints.companies || {}).length
+    });
+  } catch (error) {
+    console.error('Error reloading constraints:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 // Factory Reset API endpoint
 router.post('/factory-reset', async (req, res) => {
   try {
@@ -74,5 +91,7 @@ router.get('/factory-reset-status', (req, res) => {
     }
   });
 });
+
+router.post('/reload-constraints', reloadConstraints);
 
 module.exports = router; 

@@ -4,6 +4,7 @@ const path = require('path');
 class ConstraintsService {
   constructor() {
     this.constraints = this.loadConstraints();
+    this.setupFileWatcher();
   }
 
   // Load constraints from JSON file
@@ -12,6 +13,7 @@ class ConstraintsService {
       const constraintsPath = path.join(__dirname, '../../../constraints.json');
       if (fs.existsSync(constraintsPath)) {
         const data = fs.readFileSync(constraintsPath, 'utf8');
+        console.log('📋 Constraints loaded successfully');
         return JSON.parse(data);
       }
       return {};
@@ -19,6 +21,29 @@ class ConstraintsService {
       console.error('Error loading constraints:', error);
       return {};
     }
+  }
+
+  // Setup file watcher for auto-reload
+  setupFileWatcher() {
+    try {
+      const constraintsPath = path.join(__dirname, '../../../constraints.json');
+      if (fs.existsSync(constraintsPath)) {
+        fs.watchFile(constraintsPath, (curr, prev) => {
+          console.log('📋 Constraints file changed, reloading...');
+          this.constraints = this.loadConstraints();
+        });
+        console.log('👁️ File watcher setup for constraints.json');
+      }
+    } catch (error) {
+      console.error('Error setting up file watcher:', error);
+    }
+  }
+
+  // Manual reload method
+  reloadConstraints() {
+    this.constraints = this.loadConstraints();
+    console.log('🔄 Constraints manually reloaded');
+    return this.constraints;
   }
 
   // Check if question matches any constraint
