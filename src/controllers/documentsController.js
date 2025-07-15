@@ -134,8 +134,8 @@ const uploadDocument = async (req, res) => {
         if (existingDoc) {
           // Update existing document with merged content
           const updatedDoc = await db.updateDocument(existingDoc.id, {
-            content: contentText, // Use the enhanced merged content
-            fileSize: fileSize,
+            content_text: contentText, // Use the enhanced merged content
+            file_size: fileSize,
             metadata: {
               ...existingDoc.metadata,
               mergedWith: originalName,
@@ -161,11 +161,11 @@ const uploadDocument = async (req, res) => {
         if (existingDoc) {
           const updatedDoc = await db.updateDocument(existingDoc.id, {
             filename: fileName,
-            originalName: originalName,
-            filePath: finalStorageResult.path,
-            fileSize: fileSize,
-            content: contentText,
-            companyId: finalCompanyId,
+            original_name: originalName,
+            file_path: finalStorageResult.path,
+            file_size: fileSize,
+            content_text: contentText,
+            company_id: finalCompanyId,
             category: category,
             metadata: {
               replacedAt: new Date().toISOString(),
