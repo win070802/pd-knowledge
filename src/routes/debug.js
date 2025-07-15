@@ -3,28 +3,79 @@ const router = express.Router();
 const { debugSearch, debugDocument } = require('../controllers/debugController');
 const { checkFactoryReset, FactoryResetService } = require('../../factory-reset');
 
-// Debug search - test document search algorithm
+// Debug search endpoint
 router.post('/search', debugSearch);
 
-// Debug document - test document processing
-router.post('/document', debugDocument);
+// Debug document by ID
+router.get('/document/:id', debugDocument);
 
-const reloadConstraints = async (req, res) => {
+// System info endpoint
+router.get('/system-info', (req, res) => {
   try {
-    const geminiService = require('../../gemini');
-    const newConstraints = geminiService.constraintsService.reloadConstraints();
+    const envVars = {
+      NODE_ENV: process.env.NODE_ENV,
+      MAX_FILE_SIZE: process.env.MAX_FILE_SIZE,
+      UPLOAD_TIMEOUT_MINUTES: process.env.UPLOAD_TIMEOUT_MINUTES,
+      API_TIMEOUT_MINUTES: process.env.API_TIMEOUT_MINUTES,
+      MAX_PDF_PAGES: process.env.MAX_PDF_PAGES,
+      GOOGLE_CLOUD_PROJECT_ID: process.env.GOOGLE_CLOUD_PROJECT_ID,
+      GCS_BUCKET_NAME: process.env.GCS_BUCKET_NAME,
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY ? `${process.env.GEMINI_API_KEY.substring(0, 10)}...` : 'NOT_SET',
+      GOOGLE_APPLICATION_CREDENTIALS: process.env.GOOGLE_APPLICATION_CREDENTIALS || 'NOT_SET',
+      GOOGLE_APPLICATION_CREDENTIALS_JSON: process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON ? 'SET' : 'NOT_SET',
+      FACTORY_RESET: process.env.FACTORY_RESET
+    };
+
+    // Check which Vision service is being used
+    let visionService = 'UNKNOWN';
+    try {
+      if (process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+        visionService = 'GOOGLE_CLOUD_VISION';
+      } else {
+        visionService = 'DEMO_SERVICE';
+      }
+    } catch (error) {
+      visionService = 'ERROR_CHECKING';
+    }
+
+    res.json({
+      success: true,
+      serverTime: new Date().toISOString(),
+      visionService,
+      environmentVariables: envVars,
+      processInfo: {
+        nodeVersion: process.version,
+        platform: process.platform,
+        uptime: process.uptime(),
+        memoryUsage: process.memoryUsage()
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Reload constraints endpoint
+router.post('/reload-constraints', (req, res) => {
+  try {
+    // Force reload constraints
+    delete require.cache[require.resolve('../../constraints.json')];
     
     res.json({
       success: true,
       message: 'Constraints reloaded successfully',
-      constraintsCount: Object.keys(newConstraints.commonQuestions || {}).length,
-      companiesCount: Object.keys(newConstraints.companies || {}).length
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
-    console.error('Error reloading constraints:', error);
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
-};
+});
 
 // Factory Reset API endpoint
 router.post('/factory-reset', async (req, res) => {
@@ -91,7 +142,5 @@ router.get('/factory-reset-status', (req, res) => {
     }
   });
 });
-
-router.post('/reload-constraints', reloadConstraints);
 
 module.exports = router; 
