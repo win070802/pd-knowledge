@@ -107,10 +107,10 @@ class DocumentRepository {
 
       if (keywords.length === 0) {
         // Fallback to simple search
-        const result = await client.query(
-          'SELECT * FROM documents WHERE content_text ILIKE $1 ORDER BY upload_date DESC',
-          [`%${searchTerm}%`]
-        );
+      const result = await client.query(
+        'SELECT * FROM documents WHERE content_text ILIKE $1 ORDER BY upload_date DESC',
+        [`%${searchTerm}%`]
+      );
         return result.rows;
       }
 

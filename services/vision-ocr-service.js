@@ -16,7 +16,7 @@ class VisionOCRService {
     let visionConfig = {
       projectId: process.env.GOOGLE_CLOUD_PROJECT_ID
     };
-    
+
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
       // Production: Parse JSON credentials from environment variable
       try {
@@ -474,29 +474,19 @@ Trả lời theo format JSON:
     try {
       console.log('🔍 Processing scanned PDF with Vision API...');
       
+      // Check if we have Vision API credentials
+      if (!this.hasValidCredentials()) {
+        console.log('⚠️  Vision API credentials not available, using enhanced fallback');
+        return await this.enhancedFallbackProcessing(pdfPath, maxPages);
+      }
+      
       // Convert PDF to images
       const images = await this.convertPDFToImages(pdfPath, maxPages);
       
       if (images.length === 0) {
         console.log('⚠️  No images extracted from PDF - may be text-based PDF or conversion failed');
-        console.log('🔄 Attempting fallback to standard PDF parsing...');
-        
-        // Fallback: Try standard PDF parsing
-        try {
-          const fs = require('fs');
-          const pdfParse = require('pdf-parse');
-          const dataBuffer = fs.readFileSync(pdfPath);
-          const data = await pdfParse(dataBuffer);
-          
-          if (data.text && data.text.trim().length > 0) {
-            console.log(`✅ Fallback successful: extracted ${data.text.length} characters using standard parsing`);
-            return data.text;
-          }
-        } catch (fallbackError) {
-          console.error('❌ Fallback to standard PDF parsing failed:', fallbackError.message);
-        }
-        
-        throw new Error('No images extracted from PDF and fallback parsing failed. This may be an empty PDF or require manual processing.');
+        console.log('🔄 Attempting enhanced fallback processing...');
+        return await this.enhancedFallbackProcessing(pdfPath, maxPages);
       }
 
       let allText = '';
@@ -512,34 +502,145 @@ Trả lời theo format JSON:
         }
         
         // Clean up temp image
-        fs.unlinkSync(imagePath);
-      }
-      
+          fs.unlinkSync(imagePath);
+        }
+
       console.log(`✅ Vision API extraction completed: ${allText.length} characters from ${images.length} pages`);
       return allText.trim();
-      
+
     } catch (error) {
       console.error('❌ Error in processScannedPDF:', error.message);
       
       // Enhanced fallback mechanism
-      console.log('🔄 Attempting enhanced fallback to standard PDF parsing...');
+      console.log('🔄 Attempting enhanced fallback processing...');
       try {
-        const fs = require('fs');
-        const pdfParse = require('pdf-parse');
-        const dataBuffer = fs.readFileSync(pdfPath);
-        const data = await pdfParse(dataBuffer);
-        
-        if (data.text && data.text.trim().length > 0) {
-          console.log(`✅ Enhanced fallback successful: extracted ${data.text.length} characters`);
-          return data.text;
-        } else {
-          console.log('📄 PDF appears to be empty or contains only images without text');
-          throw new Error('PDF contains no extractable text - may be image-only document requiring manual processing');
-        }
+        return await this.enhancedFallbackProcessing(pdfPath, maxPages);
       } catch (fallbackError) {
         console.error('❌ Enhanced fallback failed:', fallbackError.message);
-        throw new Error(`Vision API failed and fallback parsing failed: ${error.message}. Original error: ${fallbackError.message}`);
+        throw new Error(`Vision API failed and enhanced fallback failed: ${error.message}. Original error: ${fallbackError.message}`);
       }
+    }
+  }
+
+  // Check if we have valid Vision API credentials
+  hasValidCredentials() {
+    try {
+      if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+        JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+        return true;
+      }
+      if (process.env.GOOGLE_APPLICATION_CREDENTIALS && 
+          fs.existsSync(process.env.GOOGLE_APPLICATION_CREDENTIALS)) {
+        return true;
+      }
+      return false;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  // Enhanced fallback processing that tries multiple methods
+  async enhancedFallbackProcessing(pdfPath, maxPages = 10) {
+    console.log('🔄 Starting enhanced fallback processing...');
+    
+    try {
+      // Method 1: Standard PDF parsing
+      console.log('🔄 Method 1: Standard PDF parsing...');
+      const pdfParse = require('pdf-parse');
+      const dataBuffer = fs.readFileSync(pdfPath);
+      const data = await pdfParse(dataBuffer);
+      
+      if (data.text && data.text.trim().length > 50) {
+        console.log(`✅ Standard parsing successful: ${data.text.length} characters`);
+        return data.text;
+      }
+      
+      // Method 2: Try Tesseract.js if available and PDF seems to be scanned
+      console.log('🔄 Method 2: Attempting Tesseract.js OCR...');
+      return await this.tesseractFallback(pdfPath, Math.min(maxPages, 5));
+      
+    } catch (error) {
+      console.error('❌ All enhanced fallback methods failed:', error.message);
+      
+      // Method 3: Return minimal content with error information
+      return `[OCR Processing Failed]
+      
+This PDF could not be processed automatically because:
+- Vision API credentials are not configured
+- Standard PDF text extraction yielded minimal results
+- Tesseract.js fallback OCR failed
+
+Error: ${error.message}
+
+Please:
+1. Configure GOOGLE_APPLICATION_CREDENTIALS_JSON for production
+2. Or manually process this scanned document
+3. Or contact support for assistance
+
+Document requires manual review.`;
+    }
+  }
+
+  // Tesseract.js fallback for when Vision API is not available
+  async tesseractFallback(pdfPath, maxPages = 5) {
+    try {
+      // Import Tesseract.js
+      const { createWorker } = require('tesseract.js');
+      
+      // Convert PDF to images with lower quality for fallback
+      const images = await this.convertPDFToImages(pdfPath, maxPages);
+      
+      if (images.length === 0) {
+        throw new Error('Could not convert PDF to images for Tesseract processing');
+      }
+      
+      let allText = '';
+      const worker = await createWorker();
+      
+      try {
+        // Load Vietnamese and English languages
+        await worker.loadLanguage('eng+vie');
+        await worker.initialize('eng+vie');
+        
+        // Process each page (limit to avoid long processing times)
+        const pagesToProcess = Math.min(images.length, 3);
+        
+        for (let i = 0; i < pagesToProcess; i++) {
+          const image = images[i];
+          console.log(`🔍 Processing page ${i + 1} with Tesseract...`);
+          
+          const { data: { text } } = await worker.recognize(image.path);
+          
+          if (text.trim()) {
+            allText += `\n--- Trang ${i + 1} ---\n`;
+            allText += text.trim() + '\n';
+          }
+          
+          // Clean up temp image
+          try {
+            fs.unlinkSync(image.path);
+          } catch (cleanupError) {
+            // Ignore cleanup errors
+          }
+        }
+        
+        await worker.terminate();
+        
+        if (allText.trim()) {
+          console.log(`✅ Tesseract.js OCR completed: ${allText.length} characters from ${pagesToProcess} pages`);
+          return allText.trim();
+        } else {
+          throw new Error('Tesseract.js extracted no readable text');
+        }
+        
+      } catch (processingError) {
+        await worker.terminate();
+        throw processingError;
+      }
+      
+    } catch (error) {
+      console.error('❌ Tesseract.js fallback failed:', error.message);
+      throw new Error(`Tesseract OCR failed: ${error.message}`);
     }
   }
 

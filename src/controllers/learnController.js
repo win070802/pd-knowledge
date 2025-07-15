@@ -39,15 +39,15 @@ const learnFromText = async (req, res) => {
       // Direct Q&A input (fallback for manual entry)
       const finalKeywords = keywords || extractKeywords(question + ' ' + answer);
       
-      const knowledge = await db.createKnowledge({
+    const knowledge = await db.createKnowledge({
         companyId: null, // Will be detected later if needed
         question: question,
         answer: answer,
-        keywords: finalKeywords,
+      keywords: finalKeywords,
         category: 'General',
-        isActive: true
-      });
-      
+      isActive: true
+    });
+
       knowledgeEntries.push(knowledge);
     }
 

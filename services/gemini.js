@@ -69,7 +69,7 @@ class GeminiService {
     return false;
   }
 
-  // Check if question should prioritize knowledge base over constraints  
+  // Check if question should prioritize knowledge base over constraints
   isKnowledgePriorityQuestion(question) {
     const questionLower = question.toLowerCase();
     
@@ -459,7 +459,7 @@ Chỉ trả về JSON, không giải thích:`;
     switch (intent.intent) {
       case 'list_documents':
         console.log(`📋 Routing to document listing`);
-        return await this.processDocumentListQuestion(question, startTime);
+          return await this.processDocumentListQuestion(question, startTime);
         
       case 'find_knowledge':
         console.log(`🧠 Routing to knowledge search`);
@@ -483,7 +483,7 @@ Chỉ trả về JSON, không giải thích:`;
         console.log(`❓ Routing to general question processing`);
         return await this.processGeneralQuestion(question, startTime);
     }
-  }
+      }
 
   // Hybrid search: combines knowledge + documents
   async processHybridSearch(question, intent, startTime) {
@@ -523,47 +523,47 @@ Chỉ trả về JSON, không giải thích:`;
   async processGeneralQuestion(question, startTime) {
     // Check constraints first
     const constraintAnswer = this.constraintsService.checkConstraints(question);
-    if (constraintAnswer) {
+      if (constraintAnswer) {
       console.log(`🔒 Constraint matched: ${constraintAnswer}`);
-      const responseTime = Date.now() - startTime;
-      
-      await db.createQuestion({
-        question,
-        answer: constraintAnswer,
-        documentIds: [],
-        responseTime
-      });
-      
-      return {
-        answer: constraintAnswer,
-        documentIds: [],
-        relevantDocuments: [],
-        responseTime
-      };
-    }
-    
+        const responseTime = Date.now() - startTime;
+        
+        await db.createQuestion({
+          question,
+          answer: constraintAnswer,
+          documentIds: [],
+          responseTime
+        });
+        
+        return {
+          answer: constraintAnswer,
+          documentIds: [],
+          relevantDocuments: [],
+          responseTime
+        };
+      }
+
     // Continue with existing general question logic...
     const isGeneralQuestion = this.contentClassifier.isGeneralQuestion(question);
     if (isGeneralQuestion) {
       console.log(`💬 Processing as general question`);
-      const answer = await this.contentClassifier.handleGeneralQuestion(question);
-      const responseTime = Date.now() - startTime;
+        const answer = await this.contentClassifier.handleGeneralQuestion(question);
+        const responseTime = Date.now() - startTime;
+        
+        await db.createQuestion({
+          question,
+          answer,
+          documentIds: [],
+          responseTime
+        });
+        
+        return {
+          answer,
+          documentIds: [],
+          relevantDocuments: [],
+          responseTime
+        };
+      }
       
-      await db.createQuestion({
-        question,
-        answer,
-        documentIds: [],
-        responseTime
-      });
-      
-      return {
-        answer,
-        documentIds: [],
-        relevantDocuments: [],
-        responseTime
-      };
-    }
-    
     // Search documents
     console.log(`📄 Searching documents for: ${question}`);
     const documentResults = await this.searchService.searchDocuments(question);
@@ -575,21 +575,21 @@ Chỉ trả về JSON, không giải thích:`;
     
     // Final fallback
     const answer = 'Xin lỗi, tôi không tìm thấy thông tin liên quan đến câu hỏi của bạn. Vui lòng thử đặt câu hỏi khác hoặc cung cấp thêm chi tiết.';
-    const responseTime = Date.now() - startTime;
-    
-    await db.createQuestion({
-      question,
-      answer,
-      documentIds: [],
-      responseTime
-    });
-    
-    return {
-      answer,
-      documentIds: [],
-      relevantDocuments: [],
-      responseTime
-    };
+          const responseTime = Date.now() - startTime;
+          
+          await db.createQuestion({
+            question,
+            answer,
+            documentIds: [],
+            responseTime
+          });
+          
+          return {
+            answer,
+            documentIds: [],
+            relevantDocuments: [],
+            responseTime
+          };
   }
 }
 
