@@ -1,23 +1,56 @@
-# Development files
-.env.example
-.DS_Store
-*.log
+# Railway ignore file
+node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 
-# Temporary directories
+# Logs
+logs
+*.log
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# dotenv environment variables file
+.env
+
+# next.js build output
+.next
+
+# Temporary folders
 temp/
 temp-images/
-uploads/test*
+.tmp/
 
-# Documentation files (optional, remove if you want them deployed)
-*.md
-!README.md
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
 
-# Development scripts
-examples.sh
-install-dependencies.sh
+# Compiled binary addons (https://nodejs.org/api/addons.html)
+build/Release
 
 # IDE files
 .vscode/
@@ -25,39 +58,28 @@ install-dependencies.sh
 *.swp
 *.swo
 
-# Test files
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Development files
 test/
 *.test.js
+*.spec.js
 
-# Local service account (using env variable instead)
-service-account-key.json
+# Backup files  
+*.bak
+*.backup
 
-# Git
-.git/
-.gitignore
+# Documentation (để giảm build size)
+docs/
+scripts/test-*.js
 
-# Node.js
-node_modules/
-.npm
-.node_repl_history
-
-# Coverage directory used by tools like istanbul
-coverage/
-
-# nyc test coverage
-.nyc_output
-
-# Dependency directories
-jspm_packages/
-
-# Optional npm cache directory
-.npm
-
-# Optional eslint cache
-.eslintcache
-
-# Output of 'npm pack'
-*.tgz
-
-# Yarn Integrity file
-.yarn-integrity 
+# Temporarily ignore Dockerfile to use nixpacks
+Dockerfile
+Dockerfile.railway 
