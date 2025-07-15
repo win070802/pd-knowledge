@@ -34,19 +34,22 @@ class OCRService {
   // Convert PDF to images
   async convertPDFToImages(pdfPath, maxPages = 10) {
     try {
-      // Ultra-high quality settings optimized for small fonts
+      // Ultra-high quality settings optimized for small fonts with proper aspect ratio
       const options = {
         density: 600,           // Very high DPI for small text
         saveFilename: "page",
         savePath: this.tempDir,
         format: "png",          // Lossless format
-        quality: 100           // Maximum quality
-        // No fixed width/height to preserve aspect ratio
+        quality: 100,          // Maximum quality
+        width: 2480,           // Fixed width in pixels (A4 at 600 DPI)
+        // Don't set height - let it auto-calculate to preserve aspect ratio
+        graphicsmagick: true   // Use GraphicsMagick for better quality
       };
 
       console.log(`Converting PDF to images (max ${maxPages} pages)...`);
       console.log(`PDF path: ${pdfPath}`);
       console.log(`Save path: ${this.tempDir}`);
+      console.log(`📐 Using fixed width: ${options.width}px with auto-height to preserve aspect ratio`);
       
       const convert = require('pdf2pic').fromPath(pdfPath, options);
       const results = [];
@@ -58,7 +61,17 @@ class OCRService {
           
           if (result && result.path) {
             results.push(result);
-            console.log(`✅ Converted page ${i}: ${result.path}`);
+            
+            // Check image dimensions to verify aspect ratio
+            try {
+              const sharp = require('sharp');
+              const imageInfo = await sharp(result.path).metadata();
+              console.log(`✅ Converted page ${i}: ${result.path}`);
+              console.log(`📐 Image dimensions: ${imageInfo.width}x${imageInfo.height} (aspect ratio: ${(imageInfo.width/imageInfo.height).toFixed(2)})`);
+            } catch (sharpError) {
+              console.log(`✅ Converted page ${i}: ${result.path}`);
+              console.log(`⚠️ Could not get image dimensions: ${sharpError.message}`);
+            }
           } else {
             console.log(`❌ No result for page ${i}`);
             break;
@@ -66,18 +79,39 @@ class OCRService {
         } catch (error) {
           console.log(`❌ Error converting page ${i}:`, error.message);
           
-          // Try with bulk conversion instead
-          if (i === 1) {
-            console.log(`🔄 Trying bulk conversion...`);
-            try {
-              const bulkResults = await convert.bulk(-1, { responseType: "image" });
-              console.log(`📊 Bulk conversion results:`, bulkResults.length);
-              return bulkResults.slice(0, maxPages);
-            } catch (bulkError) {
-              console.log(`❌ Bulk conversion also failed:`, bulkError.message);
-              break;
+                      // Try with bulk conversion instead
+            if (i === 1) {
+              console.log(`🔄 Trying bulk conversion...`);
+              try {
+                const bulkResults = await convert.bulk(-1, { responseType: "image" });
+                console.log(`📊 Bulk conversion results:`, bulkResults.length);
+                return bulkResults.slice(0, maxPages);
+              } catch (bulkError) {
+                console.log(`❌ Bulk conversion also failed:`, bulkError.message);
+                
+                // Try alternative approach with no fixed dimensions
+                console.log(`🔄 Trying conversion without fixed dimensions...`);
+                try {
+                  const fallbackOptions = {
+                    density: 600,
+                    saveFilename: "page",
+                    savePath: this.tempDir,
+                    format: "png",
+                    quality: 100,
+                    graphicsmagick: true
+                    // No width/height to let pdf2pic handle aspect ratio automatically
+                  };
+                  
+                  const fallbackConvert = require('pdf2pic').fromPath(pdfPath, fallbackOptions);
+                  const fallbackResults = await fallbackConvert.bulk(-1, { responseType: "image" });
+                  console.log(`📊 Fallback conversion results:`, fallbackResults.length);
+                  return fallbackResults.slice(0, maxPages);
+                } catch (fallbackError) {
+                  console.log(`❌ All conversion methods failed:`, fallbackError.message);
+                  break;
+                }
+              }
             }
-          }
           break;
         }
       }
@@ -100,18 +134,24 @@ class OCRService {
             console.log(`OCR Progress: ${Math.round(m.progress * 100)}%`);
           }
         },
-        // Optimized configuration for small Vietnamese fonts
+        // Optimized configuration for high-resolution Vietnamese fonts
         tessedit_pageseg_mode: '6',        // Uniform block of text
         tessedit_ocr_engine_mode: '1',     // LSTM neural network engine
         user_defined_dpi: '600',           // Match our high DPI images
-        textord_min_xheight: '6',          // Lower minimum for small characters
+        textord_min_xheight: '8',          // Adjusted for high-res images
         textord_really_old_xheight: '1',   // Better diacritic handling
         preserve_interword_spaces: '1',    // Keep word spacing
+        // High-resolution image handling
+        textord_tabvector_vertical_gap_fraction: '0.5',
+        textord_tabvector_vertical_box_ratio: '0.375',
         // Vietnamese language support
         language_model_penalty_non_freq_dict_word: '0.3',
         language_model_penalty_non_dict_word: '0.5',
         load_system_dawg: '1',
-        load_freq_dawg: '1'
+        load_freq_dawg: '1',
+        // Better quality settings for high-res images
+        classify_enable_learning: '0',
+        classify_enable_adaptive_matcher: '1'
       });
 
       // Basic cleanup for Vietnamese text
