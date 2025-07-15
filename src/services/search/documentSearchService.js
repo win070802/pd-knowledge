@@ -93,17 +93,16 @@ class DocumentSearchService {
     }
   }
 
-  // Search knowledge base for relevant entries
+  // Search knowledge base for relevant entries with synonym support
   async searchKnowledgeBase(question) {
     try {
-      const keywords = question.toLowerCase().split(/\s+/)
-        .filter(word => word.length > 2)
-        .slice(0, 5);
+      // Expand keywords with synonyms
+      const expandedKeywords = this.expandWithSynonyms(question);
       
       let allResults = [];
       
-      // Search each keyword
-      for (const keyword of keywords) {
+      // Search each expanded keyword
+      for (const keyword of expandedKeywords) {
         const results = await db.searchKnowledge(keyword);
         allResults = allResults.concat(results);
       }
@@ -120,7 +119,7 @@ class DocumentSearchService {
           let relevanceScore = 0;
           const content = (result.question + ' ' + result.answer).toLowerCase();
           
-          for (const keyword of keywords) {
+          for (const keyword of expandedKeywords) {
             const matches = (content.match(new RegExp(keyword, 'g')) || []).length;
             relevanceScore += matches;
           }
@@ -139,6 +138,70 @@ class DocumentSearchService {
       console.error('Error searching knowledge base:', error);
       return [];
     }
+  }
+
+  // Expand keywords with synonyms for better matching
+  expandWithSynonyms(question) {
+    const questionLower = question.toLowerCase();
+    
+    // Synonym mapping for Vietnamese terms
+    const synonymMap = {
+      // Team/Department terms
+      'team': ['team', 'ban', 'phòng', 'bộ phận', 'nhóm', 'đội'],
+      'ban': ['ban', 'team', 'phòng', 'bộ phận', 'nhóm'],
+      'phòng': ['phòng', 'ban', 'team', 'bộ phận'],
+      'bộ phận': ['bộ phận', 'ban', 'team', 'phòng'],
+      
+      // IT terms
+      'it': ['it', 'công nghệ thông tin', 'cntt', 'technology'],
+      'công nghệ thông tin': ['công nghệ thông tin', 'it', 'cntt'],
+      'cntt': ['cntt', 'it', 'công nghệ thông tin'],
+      
+      // Count terms  
+      'mấy': ['mấy', 'bao nhiêu', 'số lượng', 'how many'],
+      'bao nhiêu': ['bao nhiêu', 'mấy', 'số lượng'],
+      'người': ['người', 'thành viên', 'nhân viên', 'member'],
+      'thành viên': ['thành viên', 'người', 'nhân viên', 'member'],
+      
+      // Question terms
+      'có ai': ['có ai', 'những ai', 'gồm ai', 'danh sách'],
+      'những ai': ['những ai', 'có ai', 'gồm ai', 'danh sách'],
+      'gồm có': ['gồm có', 'bao gồm', 'có', 'gồm'],
+      
+      // Role terms
+      'làm gì': ['làm gì', 'vai trò', 'chức vụ', 'vị trí', 'công việc'],
+      'vai trò': ['vai trò', 'làm gì', 'chức vụ', 'vị trí'],
+      'chức vụ': ['chức vụ', 'vai trò', 'làm gì', 'vị trí']
+    };
+    
+    let allKeywords = [];
+    
+    // Extract base keywords
+    const baseKeywords = questionLower.split(/\s+/)
+      .filter(word => word.length > 1)
+      .slice(0, 8);
+    
+    // Add base keywords
+    allKeywords = allKeywords.concat(baseKeywords);
+    
+    // Add synonyms
+    for (const keyword of baseKeywords) {
+      if (synonymMap[keyword]) {
+        allKeywords = allKeywords.concat(synonymMap[keyword]);
+      }
+    }
+    
+    // Add phrase synonyms
+    Object.keys(synonymMap).forEach(phrase => {
+      if (questionLower.includes(phrase)) {
+        allKeywords = allKeywords.concat(synonymMap[phrase]);
+      }
+    });
+    
+    // Remove duplicates and filter
+    return [...new Set(allKeywords)]
+      .filter(word => word.length > 1)
+      .slice(0, 15); // Limit to prevent too many searches
   }
 
   // Generate context from relevant documents

@@ -86,43 +86,67 @@ const learnFromText = async (req, res) => {
 async function analyzeTextAutonomously(text, aiService) {
   try {
     const autonomousPrompt = `
-Phân tích hoàn toàn tự động đoạn text sau. Bạn cần:
+Phân tích SIÊU THÔNG MINH đoạn text phức tạp sau. Bạn cần:
 1. TỰ ĐỘNG PHÁT HIỆN CÔNG TY từ text (PDH, PDI, PDE, PDHH, RH...)
 2. TỰ ĐỘNG PHÂN LOẠI CATEGORY (Leadership, HR, Finance, Operations, IT, Legal, General...)
-3. TẠO CÁC CẶP Q&A THÔNG MINH
+3. TẠO NHIỀU CẶP Q&A THÔNG MINH - bao gồm CẢ SỐ LƯỢNG, DANH SÁCH, VAI TRÒ, THÔNG TIN CHI TIẾT
 
 TEXT INPUT: "${text}"
 
-YÊU CẦU PHÂN TÍCH:
+YÊU CẦU PHÂN TÍCH SIÊU THÔNG MINH:
 - Detect company: Tìm mã công ty trong text (PDH, PDI, PDE, PDHH, RH...) hoặc null nếu không có
-- Classify category: Phân loại nội dung (Leadership=lãnh đạo/CXO, HR=nhân sự, Finance=tài chính, Operations=vận hành, IT=công nghệ, Legal=pháp lý, General=khác)
-- Generate Q&A: Tạo nhiều cặp câu hỏi-trả lời thông minh từ thông tin
+- Classify category: IT=công nghệ, Leadership=lãnh đạo/CXO, HR=nhân sự, Finance=tài chính, Operations=vận hành, Legal=pháp lý, General=khác
+- Generate COMPREHENSIVE Q&A: Từ 1 text → tạo ra TẤT CẢ câu hỏi có thể:
+  * Số lượng: "Team X có mấy người?" 
+  * Danh sách: "Team X có ai?"
+  * Vai trò cụ thể: "Ai là CIO/CEO/trưởng phòng?"
+  * Thông tin chi tiết: "Nguyễn Văn A làm gì?"
+  * So sánh: "Ai quản lý hạ tầng?"
 
-VÍ DỤ PHÂN TÍCH:
-Text: "Giám đốc CIO của PDH là ông Lê Nguyễn Hoàng Minh"
-→ Company: "PDH" (detected từ text)
-→ Category: "Leadership" (vì là thông tin về lãnh đạo CXO)
-→ Generate multiple Q&A pairs
+VÍ DỤ PHÂN TÍCH SIÊU THÔNG MINH:
+Text: "ban công nghệ thông tin pdh gồm có 4 người là lê nguyễn hoàng minh (cio), nguyễn đức doanh (trưởng bộ phận hạ tầng), trần minh khôi (nhân viên it), nguyễn quang đợi (chuyên viên phần mềm)"
+→ Company: "PDH"  
+→ Category: "IT"
+→ Generate 8-10 Q&A pairs covering:
+  • Số lượng: "Team IT PDH có mấy người?" → "4 người"
+  • Danh sách: "Team IT PDH có ai?" → "Lê Nguyễn Hoàng Minh (CIO), Nguyễn Đức Doanh (trưởng bộ phận hạ tầng)..."
+  • Vai trò: "Ai là CIO PDH?" → "Lê Nguyễn Hoàng Minh"
+  • Chi tiết: "Nguyễn Đức Doanh làm gì?" → "Trưởng bộ phận quản lý hạ tầng và bảo mật"
 
 FORMAT TRẢ LỜI:
 {
   "detectedCompany": "PDH",
-  "detectedCategory": "Leadership", 
+  "detectedCategory": "IT", 
   "confidence": {
-    "company": 0.95,
-    "category": 0.90
+    "company": 0.98,
+    "category": 0.95
   },
   "entries": [
     {
+      "question": "Team IT của PDH có bao nhiêu người?",
+      "answer": "Team IT của PDH có 4 người.",
+      "type": "count_query",
+      "keywords": ["team", "IT", "PDH", "4 người", "số lượng"],
+      "relatedQuestions": ["Ban công nghệ thông tin PDH có mấy thành viên?"]
+    },
+    {
+      "question": "Team IT của PDH có những ai?",
+      "answer": "Team IT của PDH gồm có Lê Nguyễn Hoàng Minh (CIO), Nguyễn Đức Doanh (trưởng bộ phận hạ tầng và bảo mật), Trần Minh Khôi (nhân viên công nghệ thông tin), Nguyễn Quang Đợi (chuyên viên cao cấp phát triển phần mềm).",
+      "type": "list_query",
+      "keywords": ["team", "IT", "PDH", "danh sách", "thành viên"],
+      "relatedQuestions": ["Danh sách nhân viên IT PDH?"]
+    },
+    {
       "question": "Ai là CIO của PDH?",
-      "answer": "CIO của PDH là ông Lê Nguyễn Hoàng Minh",
-      "type": "person_role",
+      "answer": "CIO của PDH là Lê Nguyễn Hoàng Minh.",
+      "type": "role_query",
       "keywords": ["CIO", "PDH", "Lê Nguyễn Hoàng Minh"],
-      "relatedQuestions": ["Lê Nguyễn Hoàng Minh là ai?"]
+      "relatedQuestions": ["Lê Nguyễn Hoàng Minh giữ chức vụ gì?"]
     }
   ]
 }
 
+QUAN TRỌNG: Tạo ra ít nhất 6-8 Q&A pairs cho mỗi text phức tạp, bao phủ TẤT CẢ góc độ câu hỏi có thể.
 CHỈ trả về JSON với format trên, không thêm text khác:`;
 
     const result = await aiService.model.generateContent(autonomousPrompt);
@@ -202,18 +226,11 @@ async function processAutonomousKnowledgeEntry(entry, detectedCompanyCode, detec
       isActive: true
     };
 
+    // Temporarily disable historical update to focus on new knowledge creation
     if (existingKnowledge && existingKnowledge.length > 0) {
-      // This is potentially an update - handle historical tracking
-      console.log(`🔄 Found ${existingKnowledge.length} similar knowledge entries, processing autonomous update...`);
-      
-      const historicalUpdate = await handleHistoricalUpdate(entry, existingKnowledge, aiService);
-      finalEntry.answer = historicalUpdate.answer;
-      finalEntry.isHistoricalUpdate = true;
-      
-      // Mark old entries as inactive
-      for (const oldEntry of existingKnowledge) {
-        await db.updateKnowledge(oldEntry.id, { isActive: false });
-      }
+      console.log(`ℹ️ Found ${existingKnowledge.length} similar knowledge entries, but creating new entry for now`);
+      // For now, just create new entries without updating old ones
+      // TODO: Re-enable historical tracking after fixing database issues
     }
 
     // Create new knowledge entry

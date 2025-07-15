@@ -25,12 +25,62 @@ class GeminiService {
     return this.constraintsService.removeConstraint(question);
   }
 
-  // Check if question should prioritize knowledge base over constraints
-  isKnowledgePriorityQuestion(question) {
+  // Check if question is about company-specific information  
+  isCompanyRelatedQuestion(question) {
     const questionLower = question.toLowerCase();
     
-    // Keywords that indicate specific policy questions where knowledge base should have priority
-    const knowledgePriorityKeywords = [
+    // Company codes in question
+    const companies = ['pdh', 'pdi', 'pde', 'pdhh', 'rh'];
+    const hasCompanyCode = companies.some(company => questionLower.includes(company));
+    
+    if (hasCompanyCode) {
+      console.log(`🏢 Company code detected in question: ${question}`);
+      return true;
+    }
+    
+    // Company-related keywords (more comprehensive)
+    const companyKeywords = [
+      // Leadership and roles
+      'cio', 'ceo', 'cfo', 'cto', 'giám đốc', 'chủ tịch', 'trưởng phòng', 'trưởng bộ phận',
+      'ai là', 'là ai', 'chức vụ', 'vị trí', 'lãnh đạo', 'quản lý',
+      'director', 'manager', 'head of', 'chief', 'officer',
+      // Team and organizational (expanded)
+      'team', 'ban', 'phòng', 'bộ phận', 'department', 'division', 'đội', 'nhóm',
+      'nhân viên', 'bao nhiêu người', 'mấy người', 'số lượng', 'có ai', 'gồm có', 'những ai',
+      'thành viên', 'staff', 'member', 'employee', 'danh sách',
+      // IT and technical terms
+      'it', 'công nghệ thông tin', 'cntt', 'technology', 'phần mềm', 'hạ tầng',
+      // Business information
+      'doanh thu', 'tài chính', 'lợi nhuận', 'chi phí', 'revenue', 'profit',
+      'công ty', 'tập đoàn', 'doanh nghiệp', 'company', 'corporation',
+      // Policies and processes  
+      'nghỉ phép', 'ngày phép', 'chính sách', 'quy định', 'quy trình',
+      'vacation', 'leave', 'policy', 'process', 'procedure'
+    ];
+    
+    const hasCompanyKeywords = companyKeywords.some(keyword => questionLower.includes(keyword));
+    
+    if (hasCompanyKeywords) {
+      console.log(`🏢 Company keywords detected in question: ${question}`);
+      return true;
+    }
+    
+    console.log(`❌ No company relation detected in question: ${question}`);
+    return false;
+  }
+
+  // Check if question should prioritize knowledge base over constraints  
+  isKnowledgePriorityQuestion(question) {
+    // First check if it's company-related
+    if (this.isCompanyRelatedQuestion(question)) {
+      console.log(`🏢 Company-related question detected, prioritizing knowledge base`);
+      return true;
+    }
+    
+    const questionLower = question.toLowerCase();
+    
+    // Additional specific policy questions where knowledge base should have priority
+    const specificPolicyKeywords = [
       'nghỉ phép', 'ngày phép', 'vacation', 'leave', 'days off',
       'chính sách nghỉ', 'quy định nghỉ', 'nghỉ bao nhiêu',
       'buổi nghỉ', 'tháng nghỉ', 'năm nghỉ',
@@ -51,7 +101,15 @@ class GeminiService {
       /\w+\s+(nghỉ|phép|vacation|leave)/,  // "PDH nghỉ", "company vacation"
       /(nghỉ|phép|vacation|leave)\s+của\s+\w+/, // "nghỉ của PDH"
       /(quy định|chính sách|policy)\s+(nghỉ|phép|vacation|leave)/, // "quy định nghỉ phép"
-      /(theo\s+quy\s+định|according\s+to\s+policy).*\s+(nghỉ|phép|vacation|leave)/ // "theo quy định... nghỉ phép"
+      /(theo\s+quy\s+định|according\s+to\s+policy).*\s+(nghỉ|phép|vacation|leave)/, // "theo quy định... nghỉ phép"
+      // Leadership and organizational patterns
+      /(ai\s+là|who\s+is).*(cio|ceo|cfo|cto|giám\s+đốc|director|manager|chief)/i, // "Ai là CIO"
+      /(cio|ceo|cfo|cto|giám\s+đốc|director|manager|chief).*(của|at|in)\s+\w+/i, // "CIO của PDH"
+      /\w+\s+(có|has).*(cio|ceo|cfo|cto|giám\s+đốc|director|manager|chief)/i, // "PDH có CIO"
+      /(chức\s+vụ|position|role).*(của|of)\s+\w+/i, // "chức vụ của Minh"
+      /\w+\s+(giữ|holds?).*(chức\s+vụ|position|role)/i, // "Minh giữ chức vụ"
+      /(doanh\s+thu|revenue|profit).*(của|of)\s+\w+/i, // "doanh thu của PDH"
+      /(bao\s+nhiêu|how\s+many).*(nhân\s+viên|employees|staff)/i // "bao nhiêu nhân viên"
     ];
     
     // Document listing patterns
@@ -61,8 +119,8 @@ class GeminiService {
       /(có\s+những|what)\s+(quy\s+định|quy\s+trình|policies|processes)/
     ];
     
-    // Check for specific keywords
-    for (const keyword of knowledgePriorityKeywords) {
+    // Check for specific policy keywords
+    for (const keyword of specificPolicyKeywords) {
       if (questionLower.includes(keyword)) {
         return true;
       }
