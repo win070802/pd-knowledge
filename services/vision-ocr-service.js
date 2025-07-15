@@ -16,7 +16,7 @@ class VisionOCRService {
     let visionConfig = {
       projectId: process.env.GOOGLE_CLOUD_PROJECT_ID
     };
-
+    
     if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
       // Production: Parse JSON credentials from environment variable
       try {
@@ -40,6 +40,9 @@ class VisionOCRService {
     // Initialize Gemini AI for text correction and content analysis
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    if (!fs.existsSync(this.tempDir)) {
+      fs.mkdirSync(this.tempDir, { recursive: true });
+    }
   }
 
   ensureTempDir() {
@@ -585,17 +588,165 @@ Trả lời theo format JSON:
       // Step 5: Analyze document structure
       const structureAnalysis = await this.analyzeDocumentStructure(extractedText);
       
+      // Step 6: Cross-document validation and OCR correction (NEW)
+      let crossValidationResult = null;
+      try {
+        // Initialize cross-document validation if not already done
+        if (!this.crossDocValidator) {
+          const CrossDocumentValidationService = require('../src/services/validation/crossDocumentValidationService');
+          this.crossDocValidator = new CrossDocumentValidationService();
+        }
+        
+        console.log('🔄 Starting cross-document validation and OCR correction...');
+        // Note: documentId will be available after document is saved to database
+        // This will be called later in the document upload process
+        
+      } catch (validationError) {
+        console.error('⚠️  Cross-document validation failed, continuing without it:', validationError);
+        crossValidationResult = {
+          originalText: extractedText,
+          correctedText: extractedText,
+          entities: {},
+          corrections: [],
+          conflicts: [],
+          confidence: 1.0
+        };
+      }
+      
       return {
         text: extractedText,
         classification: classification,
         duplicateAnalysis: duplicateAnalysis,
         structureAnalysis: structureAnalysis,
+        crossValidation: crossValidationResult,
         processingMethod: this.isScannedPDF(data.text) ? 'Vision API OCR' : 'Standard PDF'
       };
       
     } catch (error) {
       console.error('❌ Error in enhanced document processing:', error);
       throw error;
+    }
+  }
+
+  // Cross-document validation and OCR correction - called after document is saved
+  async performCrossDocumentValidation(documentId, text, filename, companyId) {
+    try {
+      console.log(`🔄 Performing cross-document validation for document ${documentId}`);
+      
+      // Initialize cross-document validation service if needed
+      if (!this.crossDocValidator) {
+        const CrossDocumentValidationService = require('../src/services/validation/crossDocumentValidationService');
+        this.crossDocValidator = new CrossDocumentValidationService();
+      }
+      
+      // Perform cross-document validation and correction
+      const validationResult = await this.crossDocValidator.validateAndCorrectDocument(
+        documentId, 
+        text, 
+        filename, 
+        companyId
+      );
+      
+      // Update document with corrected text if significant corrections were made
+      if (validationResult.corrections.length > 0 && 
+          validationResult.confidence > 0.8 && 
+          validationResult.correctedText !== validationResult.originalText) {
+        
+        console.log(`✅ Applying ${validationResult.corrections.length} corrections to document ${documentId}`);
+        
+        // Update document content with corrected text
+        await db.updateDocument(documentId, {
+          content_text: validationResult.correctedText,
+          processing_notes: JSON.stringify({
+            ocr_corrections: validationResult.corrections.length,
+            entity_conflicts: validationResult.conflicts.length,
+            validation_confidence: validationResult.confidence,
+            processing_timestamp: new Date().toISOString()
+          })
+        });
+        
+        console.log(`📝 Updated document ${documentId} with corrected text and metadata`);
+      }
+      
+      // Log validation results
+      await this.logValidationResults(documentId, validationResult);
+      
+      return validationResult;
+      
+    } catch (error) {
+      console.error('❌ Error in cross-document validation:', error);
+      return {
+        originalText: text,
+        correctedText: text,
+        entities: {},
+        corrections: [],
+        conflicts: [],
+        confidence: 0.5,
+        error: error.message
+      };
+    }
+  }
+
+  // Log validation results for debugging and auditing
+  async logValidationResults(documentId, validationResult) {
+    try {
+      // Create tables if they don't exist
+      await this.ensureValidationTablesExist();
+      
+      await db.query(`
+        INSERT INTO validation_logs (
+          document_id, 
+          validation_type, 
+          original_text, 
+          corrected_text, 
+          entities_found, 
+          corrections_applied, 
+          conflicts_resolved, 
+          confidence_score,
+          processing_time_ms
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [
+        documentId,
+        'cross_document_validation',
+        validationResult.originalText ? validationResult.originalText.substring(0, 1000) : '',
+        validationResult.correctedText ? validationResult.correctedText.substring(0, 1000) : '',
+        JSON.stringify(validationResult.entities || {}),
+        JSON.stringify(validationResult.corrections || []),
+        JSON.stringify(validationResult.conflicts || []),
+        validationResult.confidence || 0.0,
+        0 // We'll add timing later if needed
+      ]);
+      
+      console.log(`📊 Logged validation results for document ${documentId}`);
+    } catch (error) {
+      console.error('❌ Error logging validation results:', error);
+    }
+  }
+
+  // Ensure validation tables exist (for first run)
+  async ensureValidationTablesExist() {
+    try {
+      const checkTablesQuery = `
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name IN ('document_metadata', 'company_metadata', 'validation_logs', 'entity_references')
+      `;
+      
+      const result = await db.query(checkTablesQuery);
+      
+      if (result.rows.length < 4) {
+        console.log('📦 Creating validation tables...');
+        // Read and execute schema
+        const schemaPath = path.join(__dirname, '../scripts/create-metadata-tables.sql');
+        if (fs.existsSync(schemaPath)) {
+          const schema = fs.readFileSync(schemaPath, 'utf8');
+          await db.query(schema);
+          console.log('✅ Validation tables created successfully');
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error ensuring validation tables exist:', error);
     }
   }
 

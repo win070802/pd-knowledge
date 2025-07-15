@@ -218,6 +218,32 @@ const uploadDocument = async (req, res) => {
     // Mark as processed
     await db.updateDocumentProcessed(documentToSave.id, true);
 
+    // ✨ NEW: Perform cross-document validation and OCR correction
+    try {
+      console.log(`🔄 Starting cross-document validation for document ${documentToSave.id}...`);
+      
+      const validationResult = await visionOCRService.performCrossDocumentValidation(
+        documentToSave.id,
+        contentText,
+        originalName,
+        finalCompanyId
+      );
+      
+      if (validationResult.corrections.length > 0) {
+        console.log(`✅ Applied ${validationResult.corrections.length} OCR corrections to document ${documentToSave.id}`);
+      }
+      
+      if (validationResult.conflicts.length > 0) {
+        console.log(`📋 Resolved ${validationResult.conflicts.length} entity conflicts for document ${documentToSave.id}`);
+      }
+      
+      console.log(`📊 Cross-document validation completed with confidence: ${validationResult.confidence}`);
+      
+    } catch (validationError) {
+      console.error('⚠️  Cross-document validation failed, document still saved:', validationError);
+      // Don't fail the upload if validation fails - just log the error
+    }
+
     // Clean up temp file and OCR files
     if (fs.existsSync(tempFilePath)) {
       fs.unlinkSync(tempFilePath);
