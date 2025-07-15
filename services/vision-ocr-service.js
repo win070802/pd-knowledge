@@ -687,7 +687,19 @@ Document requires manual review.`;
       }
       
       // Step 5: Analyze document structure
-      const structureAnalysis = await this.analyzeDocumentStructure(extractedText);
+      let structureAnalysis;
+      if (extractedText && extractedText.includes('[OCR Processing Failed]')) {
+        structureAnalysis = {
+          documentType: 'Khác',
+          mainTopics: [],
+          keyPoints: [],
+          procedures: [],
+          keyTerms: [],
+          canAnswerQuestions: []
+        };
+      } else {
+        structureAnalysis = await this.analyzeDocumentStructure(extractedText);
+      }
       
       // Step 6: Cross-document validation and OCR correction (NEW)
       let crossValidationResult = null;
