@@ -41,7 +41,7 @@ const upload = multer({
     fieldSize: maxFileSize // Match field size to file size
   },
   fileFilter: (req, file, cb) => {
-    console.log(`📁 Uploading file: ${file.originalname} (${file.mimetype}, ${(file.size || 0 / 1024 / 1024).toFixed(1)}MB)`);
+    console.log(`📁 Uploading file: ${file.originalname} (${file.mimetype}, ${((file.size || 0) / 1024 / 1024).toFixed(1)}MB)`);
     if (file.mimetype === 'application/pdf') {
       cb(null, true);
     } else {
