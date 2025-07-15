@@ -1,20 +1,20 @@
 const fs = require('fs');
 const { db } = require('../../database');
 const { extractTextFromPDF } = require('../utils/pdfExtractor');
-const ocrService = require('../../ocr-service');
+const ocrService = require('../../services/ocr-service');
 
 // Use demo service if no Google Cloud credentials available
 let visionOCRService;
 try {
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-    visionOCRService = require('../../vision-ocr-service');
+    visionOCRService = require('../../services/vision-ocr-service');
   } else {
     console.log('🧪 Using Vision OCR Demo Service (no Google Cloud credentials)');
-    visionOCRService = require('../../vision-ocr-service-demo');
+    visionOCRService = require('../../services/vision-ocr-service-demo');
   }
 } catch (error) {
   console.log('🧪 Falling back to Vision OCR Demo Service');
-  visionOCRService = require('../../vision-ocr-service-demo');
+  visionOCRService = require('../../services/vision-ocr-service-demo');
 }
 
 const storageService = require('../../services/storage-service');

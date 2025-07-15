@@ -1,6 +1,6 @@
 const fs = require('fs');
 const pdfParse = require('pdf-parse');
-const ocrService = require('../../ocr-service');
+const ocrService = require('../../services/ocr-service');
 
 // Enhanced utility function to extract text from PDF (including scanned PDFs)
 async function extractTextFromPDF(filePath) {
