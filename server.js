@@ -51,13 +51,25 @@ app.use('*', notFoundHandler);
 // Start server
 async function startServer() {
   try {
-    // Initialize database
-    await initializeDatabase();
+    // Check for factory reset first
+    const { checkFactoryReset } = require('./factory-reset');
+    const wasReset = await checkFactoryReset();
+    
+    // Initialize database (or reinitialize if reset was performed)
+    if (!wasReset) {
+      await initializeDatabase();
+    }
+    console.log('Database ready');
     
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📄 API Documentation available at http://localhost:${PORT}/health`);
       console.log(`💬 Ready to answer questions about your documents!`);
+      
+      if (wasReset) {
+        console.log('\n🔄 Factory reset was performed - system is in clean state');
+        console.log('💡 To disable factory reset, set FACTORY_RESET=false\n');
+      }
     });
   } catch (error) {
     console.error('Failed to start server:', error);
