@@ -12,10 +12,30 @@ class VisionOCRService {
     this.ensureTempDir();
     
     // Initialize Google Cloud Vision
-    this.visionClient = new ImageAnnotatorClient({
-      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    // Handle both local (keyFilename) and production (JSON credentials) environments
+    let visionConfig = {
       projectId: process.env.GOOGLE_CLOUD_PROJECT_ID
-    });
+    };
+
+    if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+      // Production: Parse JSON credentials from environment variable
+      try {
+        const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+        visionConfig.credentials = credentials;
+        console.log('🔑 Using JSON credentials for Google Cloud Vision');
+      } catch (error) {
+        console.error('❌ Failed to parse GOOGLE_APPLICATION_CREDENTIALS_JSON:', error);
+        throw error;
+      }
+    } else if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+      // Local development: Use keyFilename
+      visionConfig.keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+      console.log('🔑 Using keyFilename for Google Cloud Vision');
+    } else {
+      throw new Error('No Google Cloud credentials found. Set either GOOGLE_APPLICATION_CREDENTIALS_JSON or GOOGLE_APPLICATION_CREDENTIALS');
+    }
+
+    this.visionClient = new ImageAnnotatorClient(visionConfig);
     
     // Initialize Gemini AI for text correction and content analysis
     this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
