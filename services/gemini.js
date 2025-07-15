@@ -71,13 +71,29 @@ class GeminiService {
 
   // Check if question should prioritize knowledge base over constraints  
   isKnowledgePriorityQuestion(question) {
-    // First check if it's company-related
+    const questionLower = question.toLowerCase();
+    
+    // Document listing questions should NOT prioritize knowledge base
+    const documentKeywords = [
+      'danh sách tài liệu', 'danh sách document', 'các tài liệu', 'các document',
+      'tài liệu nào', 'document nào', 'files nào', 'documents thuộc',
+      'tài liệu của', 'document của', 'list document', 'list tài liệu'
+    ];
+    
+    const hasDocumentKeywords = documentKeywords.some(keyword => 
+      questionLower.includes(keyword)
+    );
+    
+    if (hasDocumentKeywords) {
+      console.log(`📄 Document listing question detected, using document search`);
+      return false;
+    }
+    
+    // First check if it's company-related (for knowledge content)
     if (this.isCompanyRelatedQuestion(question)) {
       console.log(`🏢 Company-related question detected, prioritizing knowledge base`);
       return true;
     }
-    
-    const questionLower = question.toLowerCase();
     
     // Additional specific policy questions where knowledge base should have priority
     const specificPolicyKeywords = [
@@ -114,9 +130,9 @@ class GeminiService {
     
     // Document listing patterns
     const documentListPatterns = [
-      /(các|danh\s+sách|list)\s+(quy\s+định|quy\s+trình|policies|processes)/,
-      /(quy\s+định|quy\s+trình|policies|processes)\s+(hiện\s+tại|current|của\s+\w+)/,
-      /(có\s+những|what)\s+(quy\s+định|quy\s+trình|policies|processes)/
+      /(các|danh\s+sách|list)\s+(quy\s+định|quy\s+trình|policies|processes|tài\s+liệu|document)/,
+      /(quy\s+định|quy\s+trình|policies|processes|tài\s+liệu|document)\s+(hiện\s+tại|current|của\s+\w+|thuộc\s+\w+)/,
+      /(có\s+những|what)\s+(quy\s+định|quy\s+trình|policies|processes|tài\s+liệu|document)/
     ];
     
     // Check for specific policy keywords
@@ -255,13 +271,16 @@ class GeminiService {
       'các quy định', 'các quy trình', 'quy định quy trình',
       'danh sách quy định', 'danh sách quy trình',
       'quy định hiện tại', 'quy trình hiện tại',
-      'có những quy định', 'có những quy trình'
+      'có những quy định', 'có những quy trình',
+      'danh sách tài liệu', 'danh sách document', 'các tài liệu', 'các document',
+      'tài liệu nào', 'document nào', 'files nào', 'documents thuộc',
+      'tài liệu của', 'document của', 'list document', 'list tài liệu'
     ];
     
     const documentListPatterns = [
-      /(các|danh\s+sách|list)\s+(quy\s+định|quy\s+trình|policies|processes)/,
-      /(quy\s+định|quy\s+trình|policies|processes)\s+(hiện\s+tại|current|của\s+\w+)/,
-      /(có\s+những|what)\s+(quy\s+định|quy\s+trình|policies|processes)/
+      /(các|danh\s+sách|list)\s+(quy\s+định|quy\s+trình|policies|processes|tài\s+liệu|document)/,
+      /(quy\s+định|quy\s+trình|policies|processes|tài\s+liệu|document)\s+(hiện\s+tại|current|của\s+\w+|thuộc\s+\w+)/,
+      /(có\s+những|what)\s+(quy\s+định|quy\s+trình|policies|processes|tài\s+liệu|document)/
     ];
     
     // Check for document list keywords
@@ -312,6 +331,13 @@ class GeminiService {
         };
       }
 
+      // Check if this is a document listing question first (independent check)
+      const isDocumentList = this.isDocumentListQuestion(question);
+      if (isDocumentList) {
+        console.log(`📋 Processing document listing question`);
+        return await this.processDocumentListQuestion(question, startTime);
+      }
+
       // Check if this is a knowledge-priority question (vacation, leave, specific policies)
       const isKnowledgePriority = this.isKnowledgePriorityQuestion(question);
       console.log(`📚 Knowledge priority check: ${isKnowledgePriority}`);
@@ -319,15 +345,7 @@ class GeminiService {
       if (isKnowledgePriority) {
         console.log(`📚 Checking knowledge base first for priority question`);
         
-        // Check if this is a document listing question
-        const isDocumentList = this.isDocumentListQuestion(question);
-        
-        if (isDocumentList) {
-          console.log(`📋 Processing document listing question`);
-          return await this.processDocumentListQuestion(question, startTime);
-        }
-        
-        // For other knowledge priority questions, check knowledge base
+        // For knowledge priority questions, check knowledge base
         const knowledgeResults = await this.searchService.searchKnowledgeBase(question);
         
         if (knowledgeResults.length > 0) {
