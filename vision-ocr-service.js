@@ -60,7 +60,9 @@ class VisionOCRService {
   }
 
   // Convert PDF to images with high quality settings
-  async convertPDFToImages(pdfPath, maxPages = 10) {
+  async convertPDFToImages(pdfPath, maxPages = null) {
+    // Use environment variable or default to 50 pages (was 10)
+    const pageLimit = maxPages || parseInt(process.env.MAX_PDF_PAGES) || 50;
     try {
       const options = {
         density: 300,           // High DPI for Vision API
@@ -72,20 +74,22 @@ class VisionOCRService {
         graphicsmagick: true
       };
 
-      console.log(`📷 Converting PDF to images for Vision API (max ${maxPages} pages)...`);
+      console.log(`📷 Converting PDF to images for Vision API (limit: ${pageLimit} pages)...`);
       
       const convert = require('pdf2pic').fromPath(pdfPath, options);
       const results = [];
+      let actualPages = 0;
       
-      for (let i = 1; i <= maxPages; i++) {
+      for (let i = 1; i <= pageLimit; i++) {
         try {
           const result = await convert(i, { responseType: "image" });
           
           if (result && result.path) {
             results.push(result);
+            actualPages = i;
             console.log(`✅ Converted page ${i}: ${result.path}`);
           } else {
-            console.log(`❌ No result for page ${i}`);
+            console.log(`📄 Reached end of PDF at page ${i-1}`);
             break;
           }
         } catch (error) {
@@ -93,14 +97,30 @@ class VisionOCRService {
           if (i === 1) {
             // Try bulk conversion
             try {
+              console.log(`🔄 Trying bulk conversion for all pages...`);
               const bulkResults = await convert.bulk(-1, { responseType: "image" });
-              return bulkResults.slice(0, maxPages);
+              const limitedResults = bulkResults.slice(0, pageLimit);
+              
+              if (bulkResults.length > pageLimit) {
+                console.log(`⚠️  PDF has ${bulkResults.length} pages, processing only first ${pageLimit} pages`);
+                console.log(`💡 To process more pages, set MAX_PDF_PAGES environment variable`);
+              }
+              
+              console.log(`✅ Bulk converted ${limitedResults.length} pages`);
+              return limitedResults;
             } catch (bulkError) {
               console.log(`❌ Bulk conversion failed:`, bulkError.message);
             }
           }
           break;
         }
+      }
+
+      // Log conversion summary
+      console.log(`📊 PDF conversion completed: ${results.length} pages processed`);
+      if (actualPages === pageLimit) {
+        console.log(`⚠️  Reached page limit (${pageLimit}). PDF might have more pages.`);
+        console.log(`💡 To process more pages, set MAX_PDF_PAGES environment variable to higher value`);
       }
 
       return results;
