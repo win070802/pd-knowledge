@@ -217,6 +217,31 @@ class DocumentSearchService {
     
     return context;
   }
+
+  // Search documents by text query
+  async searchDocuments(searchTerm, companyCode = null) {
+    try {
+      console.log(`📄 Searching documents for: "${searchTerm}" (company: ${companyCode || 'all'})`);
+      
+      // Use existing db.searchDocuments method
+      let documents = await db.searchDocuments(searchTerm);
+      
+      // Filter by company if specified
+      if (companyCode) {
+        documents = documents.filter(doc => 
+          doc.company_id === companyCode || 
+          doc.original_name.toUpperCase().includes(companyCode.toUpperCase())
+        );
+      }
+      
+      console.log(`📄 Found ${documents.length} documents`);
+      return documents;
+      
+    } catch (error) {
+      console.error('Error searching documents:', error);
+      return [];
+    }
+  }
 }
 
 module.exports = DocumentSearchService; 

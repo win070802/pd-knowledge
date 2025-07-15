@@ -331,129 +331,13 @@ class GeminiService {
         };
       }
 
-      // Check if this is a document listing question first (independent check)
-      const isDocumentList = this.isDocumentListQuestion(question);
-      if (isDocumentList) {
-        console.log(`📋 Processing document listing question`);
-        return await this.processDocumentListQuestion(question, startTime);
-      }
-
-      // Check if this is a knowledge-priority question (vacation, leave, specific policies)
-      const isKnowledgePriority = this.isKnowledgePriorityQuestion(question);
-      console.log(`📚 Knowledge priority check: ${isKnowledgePriority}`);
+      // 🧠 AI-powered intent analysis (replaces rigid keyword matching)
+      console.log(`🧠 Analyzing question intent with AI...`);
+      const intent = await this.analyzeQuestionIntent(question);
       
-      if (isKnowledgePriority) {
-        console.log(`📚 Checking knowledge base first for priority question`);
-        
-        // For knowledge priority questions, check knowledge base
-        const knowledgeResults = await this.searchService.searchKnowledgeBase(question);
-        
-        if (knowledgeResults.length > 0) {
-          console.log(`✅ Found ${knowledgeResults.length} knowledge entries, using knowledge base`);
-          return await this.aiService.processWithKnowledge(question, knowledgeResults, startTime);
-        }
-        console.log(`❌ No knowledge found, continuing with normal flow`);
-      }
-
-      // Check constraints (high priority for general questions)
-      const constraintAnswer = this.constraintsService.checkConstraints(question);
-      console.log(`🔒 Constraint check: ${constraintAnswer ? 'Found match' : 'No match'}`);
-      
-      if (constraintAnswer) {
-        console.log(`✅ Using constraint answer`);
-        const responseTime = Date.now() - startTime;
-        
-        await db.createQuestion({
-          question,
-          answer: constraintAnswer,
-          documentIds: [],
-          responseTime
-        });
-        
-        return {
-          answer: constraintAnswer,
-          documentIds: [],
-          relevantDocuments: [],
-          responseTime
-        };
-      }
-
-      // Check if it's a general question first
-      const isGeneral = this.contentClassifier.isGeneralQuestion(question);
-      console.log(`💬 General question check: ${isGeneral}`);
-      
-      if (isGeneral) {
-        console.log(`✅ Handling as general greeting`);
-        const answer = await this.contentClassifier.handleGeneralQuestion(question);
-        const responseTime = Date.now() - startTime;
-        
-        await db.createQuestion({
-          question,
-          answer,
-          documentIds: [],
-          responseTime
-        });
-        
-        return {
-          answer,
-          documentIds: [],
-          relevantDocuments: [],
-          responseTime
-        };
-      }
-      
-      // Check if it's a document-specific question
-      const isDocumentSpecific = this.contentClassifier.isDocumentSpecificQuestion(question);
-      console.log(`📄 Document-specific check: ${isDocumentSpecific}`);
-      
-      if (isDocumentSpecific) {
-        console.log(`📋 Searching for relevant documents...`);
-        const relevantDocs = await this.searchService.findRelevantDocuments(question);
-        console.log(`📊 Found ${relevantDocs.length} relevant documents`);
-        
-        if (relevantDocs.length === 0) {
-          console.log(`❌ No documents found, returning standard message`);
-          const answer = 'Xin lỗi, tôi không tìm thấy tài liệu nào liên quan đến câu hỏi của bạn. Vui lòng:\n\n• Kiểm tra lại từ khóa\n• Upload thêm tài liệu liên quan\n• Thử đặt câu hỏi khác\n\nBạn có thể sử dụng chức năng tìm kiếm để xem các tài liệu hiện có trong hệ thống.';
-          const responseTime = Date.now() - startTime;
-          
-          await db.createQuestion({
-            question,
-            answer,
-            documentIds: [],
-            responseTime
-          });
-          
-          return {
-            answer,
-            documentIds: [],
-            relevantDocuments: [],
-            responseTime
-          };
-        }
-        
-        // Process with documents
-        return await this.aiService.processWithDocuments(question, relevantDocs, startTime);
-      }
-      
-      // For general questions, use Gemini without documents
-      console.log(`🤖 Handling as general chatbot question`);
-      const answer = await this.aiService.handleGeneralChatbotQuestion(question);
-      const responseTime = Date.now() - startTime;
-      console.log(`✅ Generated answer: ${answer.substring(0, 50)}...`);
-      
-      await db.createQuestion({
-        question,
-        answer,
-        documentIds: [],
-        responseTime
-      });
-      
-      return {
-        answer,
-        documentIds: [],
-        relevantDocuments: [],
-        responseTime
-      };
+      // Route question based on AI analysis
+      console.log(`🎯 Routing question based on intent: ${intent.intent}`);
+      return await this.routeQuestionByIntent(question, intent);
       
     } catch (error) {
       console.error('Error in askQuestion:', error);
@@ -468,6 +352,236 @@ class GeminiService {
 
   async extractKeyInfo(searchTerm) {
     return this.aiService.extractKeyInfo(searchTerm);
+  }
+
+  // AI-powered intent analysis to replace rigid keyword matching
+  async analyzeQuestionIntent(question) {
+    try {
+      const analysisPrompt = `
+Phân tích câu hỏi sau đây và trả về JSON format với các thông tin:
+
+Câu hỏi: "${question}"
+
+Hãy phân tích:
+1. INTENT: Người dùng muốn gì? (list_documents, find_knowledge, hybrid_search, general_question)
+2. TARGET: Tìm gì? (documents, knowledge, both)  
+3. COMPANY: Công ty nào? (PDH, PDI, PDE, PDHH, RH, hoặc null)
+4. CATEGORY: Loại thông tin? (IT, HR, Finance, Legal, Operations, hoặc null)
+5. CONFIDENCE: Độ tin cậy (0-100)
+
+Các INTENT types:
+- list_documents: Muốn xem danh sách, liệt kê tài liệu/file
+- find_knowledge: Hỏi về thông tin cụ thể đã học (nhân sự, quy trình...)
+- hybrid_search: Cần tìm trong cả documents + knowledge 
+- general_question: Câu hỏi chung chung
+
+Ví dụ phân tích:
+"Danh sách tài liệu PDH" → {"intent":"list_documents","target":"documents","company":"PDH","category":null,"confidence":95}
+"Team IT có mấy người?" → {"intent":"find_knowledge","target":"knowledge","company":"PDH","category":"IT","confidence":90}
+"Quy định về làm việc từ xa?" → {"intent":"hybrid_search","target":"both","company":null,"category":"HR","confidence":85}
+
+Chỉ trả về JSON, không giải thích:`;
+
+      const result = await this.aiService.model.generateContent(analysisPrompt);
+      const response = result.response;
+      const text = response.text();
+      
+      // Extract JSON from response
+      console.log(`🧠 Raw AI response:`, text);
+      
+      // Try to find JSON in the response
+      let analysis = null;
+      
+      // First try: Find complete JSON object
+      const jsonMatch = text.match(/\{[^{}]*\}/);
+      if (jsonMatch) {
+        try {
+          analysis = JSON.parse(jsonMatch[0]);
+          console.log(`🧠 AI Intent Analysis:`, analysis);
+          return analysis;
+        } catch (parseError) {
+          console.error('JSON parse error:', parseError);
+        }
+      }
+      
+      // Second try: Extract key-value pairs manually
+      const intentMatch = text.match(/"intent"\s*:\s*"([^"]+)"/);
+      const targetMatch = text.match(/"target"\s*:\s*"([^"]+)"/);
+      const companyMatch = text.match(/"company"\s*:\s*"?([^",}]+)"?/);
+      const confidenceMatch = text.match(/"confidence"\s*:\s*(\d+)/);
+      
+      if (intentMatch) {
+        analysis = {
+          intent: intentMatch[1],
+          target: targetMatch ? targetMatch[1] : 'both',
+          company: companyMatch ? companyMatch[1] : null,
+          category: null,
+          confidence: confidenceMatch ? parseInt(confidenceMatch[1]) : 70
+        };
+        console.log(`🧠 Manually parsed intent:`, analysis);
+        return analysis;
+      }
+      
+      // Fallback to basic analysis
+      return {
+        intent: 'general_question',
+        target: 'both', 
+        company: this.extractCompanyFromQuestion(question),
+        category: null,
+        confidence: 50
+      };
+      
+    } catch (error) {
+      console.error('Error in intent analysis:', error);
+      // Fallback to basic logic
+      return {
+        intent: 'general_question',
+        target: 'both',
+        company: this.extractCompanyFromQuestion(question),
+        category: null,
+        confidence: 30
+      };
+    }
+  }
+
+  // Smart routing based on AI intent analysis
+  async routeQuestionByIntent(question, intent) {
+    const startTime = Date.now();
+    
+    switch (intent.intent) {
+      case 'list_documents':
+        console.log(`📋 Routing to document listing`);
+        return await this.processDocumentListQuestion(question, startTime);
+        
+      case 'find_knowledge':
+        console.log(`🧠 Routing to knowledge search`);
+        const knowledgeResults = await this.searchService.searchKnowledgeBase(question);
+        if (knowledgeResults.length > 0) {
+          return await this.aiService.processWithKnowledge(question, knowledgeResults, startTime);
+        }
+        // Fallback to document search if no knowledge found
+        console.log(`📄 Fallback to document search`);
+        const documentResults = await this.searchService.searchDocuments(question);
+        if (documentResults.length > 0) {
+          return await this.aiService.processWithDocuments(question, documentResults, startTime);
+        }
+        return await this.processGeneralQuestion(question, startTime);
+        
+      case 'hybrid_search':
+        console.log(`🔄 Routing to hybrid search (knowledge + documents)`);
+        return await this.processHybridSearch(question, intent, startTime);
+        
+      default:
+        console.log(`❓ Routing to general question processing`);
+        return await this.processGeneralQuestion(question, startTime);
+    }
+  }
+
+  // Hybrid search: combines knowledge + documents
+  async processHybridSearch(question, intent, startTime) {
+    try {
+      console.log(`🔄 Processing hybrid search for: ${question}`);
+      
+      // Search both sources in parallel
+      const [knowledgeResults, documentResults] = await Promise.all([
+        this.searchService.searchKnowledgeBase(question),
+        this.searchService.searchDocuments(question, intent.company)
+      ]);
+      
+      console.log(`📚 Knowledge results: ${knowledgeResults.length}`);
+      console.log(`📄 Document results: ${documentResults.length}`);
+      
+      // Prioritize based on confidence and relevance
+      if (knowledgeResults.length > 0 && intent.confidence > 70) {
+        console.log(`✅ High confidence knowledge found, using knowledge base`);
+        return await this.aiService.processWithKnowledge(question, knowledgeResults, startTime);
+      }
+      
+      if (documentResults.length > 0) {
+        console.log(`📄 Using document search results`);
+        return await this.aiService.processWithDocuments(question, documentResults, startTime);
+      }
+      
+      // Fallback to general processing
+      return await this.processGeneralQuestion(question, startTime);
+      
+    } catch (error) {
+      console.error('Error in hybrid search:', error);
+      return await this.processGeneralQuestion(question, startTime);
+    }
+  }
+
+  // General question processing (existing logic)
+  async processGeneralQuestion(question, startTime) {
+    // Check constraints first
+    const constraintAnswer = this.constraintsService.checkConstraints(question);
+    if (constraintAnswer) {
+      console.log(`🔒 Constraint matched: ${constraintAnswer}`);
+      const responseTime = Date.now() - startTime;
+      
+      await db.createQuestion({
+        question,
+        answer: constraintAnswer,
+        documentIds: [],
+        responseTime
+      });
+      
+      return {
+        answer: constraintAnswer,
+        documentIds: [],
+        relevantDocuments: [],
+        responseTime
+      };
+    }
+    
+    // Continue with existing general question logic...
+    const isGeneralQuestion = this.contentClassifier.isGeneralQuestion(question);
+    if (isGeneralQuestion) {
+      console.log(`💬 Processing as general question`);
+      const answer = await this.contentClassifier.handleGeneralQuestion(question);
+      const responseTime = Date.now() - startTime;
+      
+      await db.createQuestion({
+        question,
+        answer,
+        documentIds: [],
+        responseTime
+      });
+      
+      return {
+        answer,
+        documentIds: [],
+        relevantDocuments: [],
+        responseTime
+      };
+    }
+    
+    // Search documents
+    console.log(`📄 Searching documents for: ${question}`);
+    const documentResults = await this.searchService.searchDocuments(question);
+    
+    if (documentResults.length > 0) {
+      console.log(`📄 Found ${documentResults.length} document results`);
+      return await this.aiService.processWithDocuments(question, documentResults, startTime);
+    }
+    
+    // Final fallback
+    const answer = 'Xin lỗi, tôi không tìm thấy thông tin liên quan đến câu hỏi của bạn. Vui lòng thử đặt câu hỏi khác hoặc cung cấp thêm chi tiết.';
+    const responseTime = Date.now() - startTime;
+    
+    await db.createQuestion({
+      question,
+      answer,
+      documentIds: [],
+      responseTime
+    });
+    
+    return {
+      answer,
+      documentIds: [],
+      relevantDocuments: [],
+      responseTime
+    };
   }
 }
 
