@@ -143,8 +143,8 @@ const learnDocumentCompany = async (req, res) => {
       if (reorganizeResult) {
         // Update document in database
         await db.updateDocument(document.id, {
-          companyId: company.id,
-          filePath: reorganizeResult.path,
+          company_id: company.id,
+          file_path: reorganizeResult.path,
           metadata: {
             ...document.metadata,
             companyCode: company.code,
