@@ -1,4 +1,4 @@
-# Railway ignore file
+# Railway ignore file - Force nixpacks deployment
 node_modules/
 npm-debug.log*
 yarn-debug.log*
@@ -80,6 +80,8 @@ test/
 docs/
 scripts/test-*.js
 
-# Temporarily ignore Dockerfile to use nixpacks
-Dockerfile
-Dockerfile.railway 
+# Force nixpacks - exclude ALL Docker files
+Dockerfile*
+*.dockerfile
+docker-compose*
+.dockerignore 

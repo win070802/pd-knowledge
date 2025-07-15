@@ -1,0 +1,16 @@
+# Simplified nixpacks config for fast deployment
+[phases.setup]
+nixPkgs = ["nodejs-18_x"]
+
+[phases.install]
+cmds = ["npm ci --only=production && npm cache clean --force"]
+
+[phases.build]
+cmds = ["echo 'Build completed'"]
+
+[start]
+cmd = "node server.js"
+
+[variables]
+NODE_ENV = "production"
+PORT = "3000" 
