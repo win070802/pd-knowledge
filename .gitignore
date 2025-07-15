@@ -30,3 +30,16 @@ dist/
 build/uploads/
 temp-images/
 temp/
+
+# Sensitive files
+*.json
+service-account-key.json
+vision-key.json
+.env
+
+# Test files  
+PDH-*.pdf
+*.pdf
+
+# Vision service demo
+vision-ocr-service-demo.js

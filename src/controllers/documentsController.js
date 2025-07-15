@@ -2,6 +2,21 @@ const fs = require('fs');
 const { db } = require('../../database');
 const { extractTextFromPDF } = require('../utils/pdfExtractor');
 const ocrService = require('../../ocr-service');
+
+// Use demo service if no Google Cloud credentials available
+let visionOCRService;
+try {
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    visionOCRService = require('../../vision-ocr-service');
+  } else {
+    console.log('🧪 Using Vision OCR Demo Service (no Google Cloud credentials)');
+    visionOCRService = require('../../vision-ocr-service-demo');
+  }
+} catch (error) {
+  console.log('🧪 Falling back to Vision OCR Demo Service');
+  visionOCRService = require('../../vision-ocr-service-demo');
+}
+
 const storageService = require('../../storage-service');
 
 // Get all documents
@@ -29,7 +44,7 @@ const getDocumentById = async (req, res) => {
   }
 };
 
-// Upload PDF document
+// Enhanced upload PDF document with Vision API and AI features
 const uploadDocument = async (req, res) => {
   try {
     if (!req.file) {
@@ -41,76 +56,192 @@ const uploadDocument = async (req, res) => {
     const originalName = req.file.originalname;
     const fileSize = req.file.size;
 
-    // Extract text from PDF (with OCR support for scanned PDFs)
-    const contentText = await extractTextFromPDF(tempFilePath);
+    console.log(`🚀 Starting enhanced document upload: ${originalName}`);
 
-    // Upload to storage (cloud or local) with company detection
+    // Upload to storage first to get company info
     const storageResult = await storageService.uploadFile(tempFilePath, fileName, originalName);
+    const companyId = storageResult.company ? storageResult.company.id : null;
 
-    // Detect category from filename  
-    const category = storageService.detectCategoryFromFileName(originalName);
+    // Use enhanced Vision API processing
+    const processingResult = await visionOCRService.processDocumentWithEnhancements(
+      tempFilePath, 
+      fileName, 
+      originalName, 
+      companyId
+    );
 
-    // Determine processing method
-    const isScanned = ocrService.isScannedPDF(contentText);
-    const processingMethod = isScanned ? 'OCR' : 'Standard';
-
-    // Save document to database with company and category
-    const document = await db.createDocument({
-      filename: fileName,
-      originalName: originalName,
-      filePath: storageResult.path,
-      fileSize: fileSize,
-      content: contentText,
-      companyId: storageResult.company ? storageResult.company.id : null,
-      category: category,
-      metadata: {
-        uploadedAt: new Date().toISOString(),
-        contentLength: contentText.length,
-        processingMethod: processingMethod,
-        isScanned: isScanned,
-        storageType: storageResult.storage,
-        storageUrl: storageResult.url,
-        companyCode: storageResult.company ? storageResult.company.code : null,
-        detectedCategory: category
+    // Check if document was rejected
+    if (!processingResult.classification.accept) {
+      // Clean up uploaded file
+      if (fs.existsSync(tempFilePath)) {
+        fs.unlinkSync(tempFilePath);
       }
-    });
+      
+      return res.status(400).json({
+        success: false,
+        error: `Document rejected: ${processingResult.classification.reason}`,
+        classification: processingResult.classification
+      });
+    }
+
+    const contentText = processingResult.text;
+    const category = processingResult.classification.category;
+
+    // Handle duplicate documents
+    let documentToSave = null;
+    let mergeInfo = null;
+
+    if (processingResult.duplicateAnalysis.isDuplicate) {
+      const similarDoc = processingResult.duplicateAnalysis.similarDocs[0];
+      
+      if (processingResult.duplicateAnalysis.recommendation === 'merge') {
+        // Update existing document with merged content
+        console.log(`🔗 Merging with document ID: ${similarDoc.id}`);
+        
+        documentToSave = await db.updateDocument(similarDoc.id, {
+          content_text: contentText,
+          file_size: fileSize,
+          metadata: {
+            ...processingResult.structureAnalysis,
+            lastMerged: new Date().toISOString(),
+            mergeReason: similarDoc.reason,
+            originalFiles: [originalName],
+            processingMethod: processingResult.processingMethod,
+            classification: processingResult.classification,
+            duplicateAnalysis: processingResult.duplicateAnalysis
+          }
+        });
+        
+        mergeInfo = {
+          merged: true,
+          mergedWithDocument: similarDoc.id,
+          mergeReason: similarDoc.reason,
+          similarity: similarDoc.similarity
+        };
+        
+      } else if (processingResult.duplicateAnalysis.recommendation === 'replace') {
+        // Replace existing document
+        console.log(`🔄 Replacing document ID: ${similarDoc.id}`);
+        
+        documentToSave = await db.updateDocument(similarDoc.id, {
+          filename: fileName,
+          original_name: originalName,
+          file_path: storageResult.path,
+          file_size: fileSize,
+          content_text: contentText,
+          metadata: {
+            ...processingResult.structureAnalysis,
+            lastReplaced: new Date().toISOString(),
+            replaceReason: similarDoc.reason,
+            processingMethod: processingResult.processingMethod,
+            classification: processingResult.classification,
+            duplicateAnalysis: processingResult.duplicateAnalysis
+          }
+        });
+        
+        mergeInfo = {
+          replaced: true,
+          replacedDocument: similarDoc.id,
+          replaceReason: similarDoc.reason,
+          similarity: similarDoc.similarity
+        };
+      }
+    }
+
+    // Create new document if no merge/replace occurred
+    if (!documentToSave) {
+      documentToSave = await db.createDocument({
+        filename: fileName,
+        originalName: originalName,
+        filePath: storageResult.path,
+        fileSize: fileSize,
+        content: contentText,
+        companyId: companyId,
+        category: category,
+        metadata: {
+          uploadedAt: new Date().toISOString(),
+          contentLength: contentText.length,
+          processingMethod: processingResult.processingMethod,
+          classification: processingResult.classification,
+          duplicateAnalysis: processingResult.duplicateAnalysis,
+          structureAnalysis: processingResult.structureAnalysis,
+          storageType: storageResult.storage,
+          storageUrl: storageResult.url,
+          companyCode: storageResult.company ? storageResult.company.code : null,
+          detectedCategory: category,
+          canAnswerQuestions: processingResult.structureAnalysis.canAnswerQuestions,
+          keyTerms: processingResult.structureAnalysis.keyTerms,
+          mainTopics: processingResult.structureAnalysis.mainTopics
+        }
+      });
+    }
 
     // Mark as processed
-    await db.updateDocumentProcessed(document.id, true);
+    await db.updateDocumentProcessed(documentToSave.id, true);
 
     // Clean up temp file and OCR files
     if (fs.existsSync(tempFilePath)) {
       fs.unlinkSync(tempFilePath);
     }
-    ocrService.cleanup();
+    visionOCRService.cleanup();
 
-    res.json({
+    // Prepare response
+    const response = {
       success: true,
-      message: 'Document uploaded and processed successfully',
+      message: 'Document uploaded and processed successfully with AI enhancements',
       document: {
-        id: document.id,
-        filename: document.filename,
-        originalName: document.original_name,
-        filePath: document.file_path,
-        fileSize: document.file_size,
+        id: documentToSave.id,
+        filename: documentToSave.filename,
+        originalName: documentToSave.original_name,
+        filePath: documentToSave.file_path,
+        fileSize: documentToSave.file_size,
         contentLength: contentText.length,
-        uploadDate: document.upload_date,
-        processed: document.processed,
-        processingMethod: processingMethod,
-        isScanned: isScanned,
+        uploadDate: documentToSave.upload_date,
+        processed: documentToSave.processed,
+        processingMethod: processingResult.processingMethod,
         storageType: storageResult.storage,
         storageUrl: storageResult.url,
-        metadata: document.metadata
+        company: storageResult.company ? storageResult.company.code : null,
+        category: category,
+        metadata: documentToSave.metadata
+      },
+      aiAnalysis: {
+        classification: processingResult.classification,
+        duplicateAnalysis: processingResult.duplicateAnalysis,
+        structureAnalysis: processingResult.structureAnalysis,
+        canAnswerQuestions: processingResult.structureAnalysis.canAnswerQuestions,
+        keyTopics: processingResult.structureAnalysis.mainTopics,
+        documentType: processingResult.structureAnalysis.documentType
       }
-    });
+    };
+
+    // Add merge information if applicable
+    if (mergeInfo) {
+      response.mergeInfo = mergeInfo;
+    }
+
+    console.log(`✅ Document processing completed successfully`);
+    console.log(`📊 Classification: ${processingResult.classification.category} (${processingResult.classification.confidence})`);
+    console.log(`🔍 Document Type: ${processingResult.structureAnalysis.documentType}`);
+    console.log(`📝 Can Answer: ${processingResult.structureAnalysis.canAnswerQuestions.length} question types`);
+
+    res.json(response);
 
   } catch (error) {
     console.error('Error uploading document:', error);
+    
     // Clean up file if error occurred
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
-    res.status(500).json({ success: false, error: error.message });
+    
+    visionOCRService.cleanup();
+    
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      details: error.stack 
+    });
   }
 };
 

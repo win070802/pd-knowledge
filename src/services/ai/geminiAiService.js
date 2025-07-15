@@ -179,7 +179,7 @@ TRÁLỜI:`;
     documents.forEach((doc, index) => {
       context += `\n[Tài liệu ${index + 1}: ${doc.original_name}]\n`;
       // Limit context length to avoid token limits
-      const content = doc.content_text.substring(0, 2000);
+      const content = (doc.content_text || '').substring(0, 2000);
       context += content + '\n';
     });
     
