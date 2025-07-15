@@ -87,64 +87,102 @@ const uploadDocument = async (req, res) => {
     const contentText = processingResult.text;
     const category = processingResult.classification.category;
 
+    // Try to detect company from content if not detected from filename
+    let finalCompany = storageResult.company;
+    let finalStorageResult = storageResult;
+    
+    if (!finalCompany && contentText) {
+      console.log(`🔍 No company detected from filename, scanning content...`);
+      const detectedCompany = await storageService.detectCompanyFromContent(contentText);
+      
+      if (detectedCompany) {
+        console.log(`🎯 Company detected from content: ${detectedCompany.code}`);
+        
+        // Reorganize file to correct company folder
+        const reorganizeResult = await storageService.reorganizeFileByCompany(
+          storageResult.path,
+          fileName,
+          detectedCompany,
+          category
+        );
+        
+        if (reorganizeResult) {
+          finalCompany = detectedCompany;
+          finalStorageResult = reorganizeResult;
+          console.log(`✅ File reorganized to ${detectedCompany.code} folder`);
+        }
+      } else {
+        console.log(`ℹ️ No company detected from content, keeping in UNKNOWN folder`);
+      }
+    }
+
     // Handle duplicate documents
     let documentToSave = null;
     let mergeInfo = null;
+    
+    const finalCompanyId = finalCompany ? finalCompany.id : null;
 
+    // Handle duplicate documents
     if (processingResult.duplicateAnalysis.isDuplicate) {
-      const similarDoc = processingResult.duplicateAnalysis.similarDocs[0];
+      const recommendation = processingResult.duplicateAnalysis.recommendation;
       
-      if (processingResult.duplicateAnalysis.recommendation === 'merge') {
-        // Update existing document with merged content
-        console.log(`🔗 Merging with document ID: ${similarDoc.id}`);
+      if (recommendation === 'merge') {
+        // Merge with existing document
+        const similarDoc = processingResult.duplicateAnalysis.similarDocs[0];
+        const existingDoc = await db.getDocumentById(similarDoc.id);
         
-        documentToSave = await db.updateDocument(similarDoc.id, {
-          content_text: contentText,
-          file_size: fileSize,
-          metadata: {
-            ...processingResult.structureAnalysis,
-            lastMerged: new Date().toISOString(),
-            mergeReason: similarDoc.reason,
-            originalFiles: [originalName],
-            processingMethod: processingResult.processingMethod,
-            classification: processingResult.classification,
-            duplicateAnalysis: processingResult.duplicateAnalysis
-          }
-        });
-        
-        mergeInfo = {
-          merged: true,
-          mergedWithDocument: similarDoc.id,
-          mergeReason: similarDoc.reason,
-          similarity: similarDoc.similarity
-        };
-        
-      } else if (processingResult.duplicateAnalysis.recommendation === 'replace') {
+        if (existingDoc) {
+          // Update existing document with merged content
+          const updatedDoc = await db.updateDocument(existingDoc.id, {
+            content: contentText, // Use the enhanced merged content
+            fileSize: fileSize,
+            metadata: {
+              ...existingDoc.metadata,
+              mergedWith: originalName,
+              lastMergeDate: new Date().toISOString(),
+              mergeReason: similarDoc.reason
+            }
+          });
+          
+          documentToSave = updatedDoc;
+          mergeInfo = {
+            action: 'merged',
+            targetDocument: existingDoc.original_name,
+            reason: similarDoc.reason
+          };
+          
+          console.log(`🔗 Document merged with existing: ${existingDoc.original_name}`);
+        }
+      } else if (recommendation === 'replace') {
         // Replace existing document
-        console.log(`🔄 Replacing document ID: ${similarDoc.id}`);
+        const similarDoc = processingResult.duplicateAnalysis.similarDocs[0];
+        const existingDoc = await db.getDocumentById(similarDoc.id);
         
-        documentToSave = await db.updateDocument(similarDoc.id, {
-          filename: fileName,
-          original_name: originalName,
-          file_path: storageResult.path,
-          file_size: fileSize,
-          content_text: contentText,
-          metadata: {
-            ...processingResult.structureAnalysis,
-            lastReplaced: new Date().toISOString(),
-            replaceReason: similarDoc.reason,
-            processingMethod: processingResult.processingMethod,
-            classification: processingResult.classification,
-            duplicateAnalysis: processingResult.duplicateAnalysis
-          }
-        });
-        
-        mergeInfo = {
-          replaced: true,
-          replacedDocument: similarDoc.id,
-          replaceReason: similarDoc.reason,
-          similarity: similarDoc.similarity
-        };
+        if (existingDoc) {
+          const updatedDoc = await db.updateDocument(existingDoc.id, {
+            filename: fileName,
+            originalName: originalName,
+            filePath: finalStorageResult.path,
+            fileSize: fileSize,
+            content: contentText,
+            companyId: finalCompanyId,
+            category: category,
+            metadata: {
+              replacedAt: new Date().toISOString(),
+              previousVersion: existingDoc.original_name,
+              replaceReason: similarDoc.reason
+            }
+          });
+          
+          documentToSave = updatedDoc;
+          mergeInfo = {
+            action: 'replaced',
+            previousDocument: existingDoc.original_name,
+            reason: similarDoc.reason
+          };
+          
+          console.log(`🔄 Document replaced existing: ${existingDoc.original_name}`);
+        }
       }
     }
 
@@ -153,10 +191,10 @@ const uploadDocument = async (req, res) => {
       documentToSave = await db.createDocument({
         filename: fileName,
         originalName: originalName,
-        filePath: storageResult.path,
+        filePath: finalStorageResult.path,
         fileSize: fileSize,
         content: contentText,
-        companyId: companyId,
+        companyId: finalCompanyId,
         category: category,
         metadata: {
           uploadedAt: new Date().toISOString(),
@@ -165,13 +203,14 @@ const uploadDocument = async (req, res) => {
           classification: processingResult.classification,
           duplicateAnalysis: processingResult.duplicateAnalysis,
           structureAnalysis: processingResult.structureAnalysis,
-          storageType: storageResult.storage,
-          storageUrl: storageResult.url,
-          companyCode: storageResult.company ? storageResult.company.code : null,
+          storageType: finalStorageResult.storage,
+          storageUrl: finalStorageResult.url,
+          companyCode: finalCompany ? finalCompany.code : 'UNKNOWN',
           detectedCategory: category,
           canAnswerQuestions: processingResult.structureAnalysis.canAnswerQuestions,
           keyTerms: processingResult.structureAnalysis.keyTerms,
-          mainTopics: processingResult.structureAnalysis.mainTopics
+          mainTopics: processingResult.structureAnalysis.mainTopics,
+          contentDetectedCompany: finalCompany ? finalCompany.code : null
         }
       });
     }
@@ -185,47 +224,40 @@ const uploadDocument = async (req, res) => {
     }
     visionOCRService.cleanup();
 
-    // Prepare response
+    // Success response with comprehensive information
     const response = {
       success: true,
-      message: 'Document uploaded and processed successfully with AI enhancements',
-      document: {
-        id: documentToSave.id,
-        filename: documentToSave.filename,
-        originalName: documentToSave.original_name,
-        filePath: documentToSave.file_path,
-        fileSize: documentToSave.file_size,
-        contentLength: contentText.length,
-        uploadDate: documentToSave.upload_date,
-        processed: documentToSave.processed,
-        processingMethod: processingResult.processingMethod,
-        storageType: storageResult.storage,
-        storageUrl: storageResult.url,
-        company: storageResult.company ? storageResult.company.code : null,
-        category: category,
-        metadata: documentToSave.metadata
+      message: mergeInfo ? 
+        `Document ${mergeInfo.action} successfully` : 
+        'Document uploaded and processed successfully',
+      id: documentToSave.id,
+      filename: fileName,
+      originalName: originalName,
+      company: finalCompany ? finalCompany.code : 'UNKNOWN',
+      companyDetection: {
+        fromFilename: storageResult.company ? storageResult.company.code : null,
+        fromContent: finalCompany && !storageResult.company ? finalCompany.code : null,
+        finalCompany: finalCompany ? finalCompany.code : 'UNKNOWN'
       },
-      aiAnalysis: {
-        classification: processingResult.classification,
-        duplicateAnalysis: processingResult.duplicateAnalysis,
-        structureAnalysis: processingResult.structureAnalysis,
-        canAnswerQuestions: processingResult.structureAnalysis.canAnswerQuestions,
-        keyTopics: processingResult.structureAnalysis.mainTopics,
-        documentType: processingResult.structureAnalysis.documentType
-      }
+      category: category,
+      cloudPath: finalStorageResult.storage === 'cloud' ? 
+        finalStorageResult.path : null,
+      fileSize: fileSize,
+      contentLength: contentText.length,
+      processingMethod: processingResult.processingMethod,
+      classification: {
+        category: processingResult.classification.category,
+        confidence: processingResult.classification.confidence,
+        businessRelevance: processingResult.classification.businessRelevance
+      },
+      duplicateAnalysis: processingResult.duplicateAnalysis,
+      mergeInfo: mergeInfo,
+      keyTerms: processingResult.structureAnalysis.keyTerms.slice(0, 10), // First 10 terms
+      canAnswerQuestions: processingResult.structureAnalysis.canAnswerQuestions.slice(0, 5) // First 5 questions
     };
 
-    // Add merge information if applicable
-    if (mergeInfo) {
-      response.mergeInfo = mergeInfo;
-    }
-
-    console.log(`✅ Document processing completed successfully`);
-    console.log(`📊 Classification: ${processingResult.classification.category} (${processingResult.classification.confidence})`);
-    console.log(`🔍 Document Type: ${processingResult.structureAnalysis.documentType}`);
-    console.log(`📝 Can Answer: ${processingResult.structureAnalysis.canAnswerQuestions.length} question types`);
-
-    res.json(response);
+    console.log(`✅ Document upload completed: ${originalName} -> ${finalCompany ? finalCompany.code : 'UNKNOWN'}/${category}`);
+    res.status(201).json(response);
 
   } catch (error) {
     console.error('Error uploading document:', error);
