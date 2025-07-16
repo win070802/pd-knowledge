@@ -3,13 +3,14 @@ const { convert } = require('pdf2pic');
 const fs = require('fs');
 const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { db } = require('../database');
+const { db: defaultDb } = require('../database');
 require('dotenv').config();
 
 class VisionOCRService {
   constructor() {
     this.tempDir = './temp-images';
     this.ensureTempDir();
+    this.db = defaultDb; // Default database connection
     
     // Initialize Google Cloud Vision
     // Handle both local (keyFilename) and production (JSON credentials) environments
@@ -43,6 +44,15 @@ class VisionOCRService {
     if (!fs.existsSync(this.tempDir)) {
       fs.mkdirSync(this.tempDir, { recursive: true });
     }
+  }
+
+  // Set a custom database connection
+  setDbConnection(dbConnection) {
+    this.db = dbConnection;
+    if (this.crossDocValidator && typeof this.crossDocValidator.setDbConnection === 'function') {
+      this.crossDocValidator.setDbConnection(dbConnection);
+    }
+    console.log('✅ Database connection set for Vision OCR Service');
   }
 
   ensureTempDir() {
@@ -293,7 +303,7 @@ Trả lời CHÍNH XÁC theo format:
       let existingDocs = [];
       if (companyId) {
         // Get all documents and filter by company_id
-        const allDocs = await db.getDocuments();
+        const allDocs = await this.db.getDocuments();
         existingDocs = allDocs.filter(doc => doc.company_id === companyId);
       }
       
@@ -675,7 +685,7 @@ Document requires manual review.`;
       if (duplicateAnalysis.isDuplicate && duplicateAnalysis.recommendation === 'merge') {
         console.log('🔗 Merging with similar document...');
         const similarDoc = duplicateAnalysis.similarDocs[0];
-        const existingDoc = await db.getDocumentById(similarDoc.id);
+        const existingDoc = await this.db.getDocumentById(similarDoc.id);
         
         if (existingDoc) {
           extractedText = await this.mergeSimilarDocuments(
@@ -708,6 +718,10 @@ Document requires manual review.`;
         if (!this.crossDocValidator) {
           const CrossDocumentValidationService = require('../src/services/validation/crossDocumentValidationService');
           this.crossDocValidator = new CrossDocumentValidationService();
+          // Pass the database connection to the validator
+          if (this.db) {
+            this.crossDocValidator.setDbConnection(this.db);
+          }
         }
         
         console.log('🔄 Starting cross-document validation and OCR correction...');
@@ -750,6 +764,10 @@ Document requires manual review.`;
       if (!this.crossDocValidator) {
         const CrossDocumentValidationService = require('../src/services/validation/crossDocumentValidationService');
         this.crossDocValidator = new CrossDocumentValidationService();
+        // Pass the database connection to the validator
+        if (this.db) {
+          this.crossDocValidator.setDbConnection(this.db);
+        }
       }
       
       // Perform cross-document validation and correction
@@ -761,18 +779,18 @@ Document requires manual review.`;
       );
       
       // Update document with corrected text if significant corrections were made
-      if (validationResult.corrections.length > 0 && 
+      if (validationResult.corrections && validationResult.corrections.length > 0 && 
           validationResult.confidence > 0.8 && 
           validationResult.correctedText !== validationResult.originalText) {
         
         console.log(`✅ Applying ${validationResult.corrections.length} corrections to document ${documentId}`);
         
         // Update document content with corrected text
-        await db.updateDocument(documentId, {
+        await this.db.updateDocument(documentId, {
           content_text: validationResult.correctedText,
           processing_notes: JSON.stringify({
             ocr_corrections: validationResult.corrections.length,
-            entity_conflicts: validationResult.conflicts.length,
+            entity_conflicts: validationResult.conflicts ? validationResult.conflicts.length : 0,
             validation_confidence: validationResult.confidence,
             processing_timestamp: new Date().toISOString()
           })
@@ -806,7 +824,7 @@ Document requires manual review.`;
       // Create tables if they don't exist
       await this.ensureValidationTablesExist();
       
-      await db.query(`
+      await this.db.query(`
         INSERT INTO validation_logs (
           document_id, 
           validation_type, 
@@ -846,20 +864,90 @@ Document requires manual review.`;
         AND table_name IN ('document_metadata', 'company_metadata', 'validation_logs', 'entity_references')
       `;
       
-      const result = await db.query(checkTablesQuery);
+      const result = await this.db.query(checkTablesQuery);
       
-      if (result.rows.length < 4) {
+      if (!result.rows || result.rows.length < 4) {
         console.log('📦 Creating validation tables...');
         // Read and execute schema
         const schemaPath = path.join(__dirname, '../scripts/create-metadata-tables.sql');
         if (fs.existsSync(schemaPath)) {
           const schema = fs.readFileSync(schemaPath, 'utf8');
-          await db.query(schema);
+          await this.db.query(schema);
           console.log('✅ Validation tables created successfully');
+        } else {
+          console.log('⚠️ Schema file not found at:', schemaPath);
+          // Create tables inline as fallback
+          await this.createValidationTablesInline();
         }
       }
     } catch (error) {
       console.error('❌ Error ensuring validation tables exist:', error);
+    }
+  }
+  
+  // Create validation tables inline if SQL file is not found
+  async createValidationTablesInline() {
+    try {
+      const createTablesSQL = `
+        -- Document metadata table
+        CREATE TABLE IF NOT EXISTS document_metadata (
+          id SERIAL PRIMARY KEY,
+          document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+          entities JSONB DEFAULT '{}',
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW(),
+          UNIQUE(document_id)
+        );
+
+        -- Company metadata table
+        CREATE TABLE IF NOT EXISTS company_metadata (
+          id SERIAL PRIMARY KEY,
+          company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+          metadata JSONB DEFAULT '{}',
+          created_at TIMESTAMP DEFAULT NOW(),
+          updated_at TIMESTAMP DEFAULT NOW(),
+          UNIQUE(company_id)
+        );
+
+        -- Validation logs table
+        CREATE TABLE IF NOT EXISTS validation_logs (
+          id SERIAL PRIMARY KEY,
+          document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+          validation_type VARCHAR(100) NOT NULL,
+          original_text TEXT,
+          corrected_text TEXT,
+          entities_found JSONB DEFAULT '{}',
+          corrections_applied JSONB DEFAULT '[]',
+          conflicts_resolved JSONB DEFAULT '[]',
+          confidence_score DECIMAL(3,2) DEFAULT 0.0,
+          processing_time_ms INTEGER DEFAULT 0,
+          created_at TIMESTAMP DEFAULT NOW()
+        );
+
+        -- Entity references table for fast lookup
+        CREATE TABLE IF NOT EXISTS entity_references (
+          id SERIAL PRIMARY KEY,
+          entity_name VARCHAR(255) NOT NULL,
+          entity_type VARCHAR(50) NOT NULL,
+          document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+          company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+          confidence DECIMAL(3,2) DEFAULT 1.0,
+          created_at TIMESTAMP DEFAULT NOW()
+        );
+      `;
+      
+      // Split and execute each statement
+      const statements = createTablesSQL.split(';')
+        .map(stmt => stmt.trim())
+        .filter(stmt => stmt.length > 0);
+      
+      for (const statement of statements) {
+        await this.db.query(statement);
+      }
+      
+      console.log('✅ Validation tables created successfully (inline SQL)');
+    } catch (error) {
+      console.error('❌ Error creating validation tables inline:', error);
     }
   }
 

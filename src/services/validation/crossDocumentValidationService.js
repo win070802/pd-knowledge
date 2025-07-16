@@ -1,10 +1,17 @@
 const EntityExtractionService = require('../ai/entityExtractionService');
-const { db } = require('../../../database');
+const { db: defaultDb } = require('../../../database');
 const { pool } = require('../../config/database');
 
 class CrossDocumentValidationService {
   constructor() {
     this.entityExtractor = new EntityExtractionService();
+    this.db = defaultDb; // Default database connection
+  }
+  
+  // Set a custom database connection
+  setDbConnection(dbConnection) {
+    this.db = dbConnection;
+    console.log('✅ Database connection set for Cross-Document Validation Service');
   }
 
   // Main method: Cross-validate new document with existing ones
@@ -80,7 +87,7 @@ class CrossDocumentValidationService {
   // Get documents from same company for comparison
   async getRelatedDocuments(companyId, excludeDocumentId) {
     try {
-      const documents = await db.getDocuments();
+      const documents = await this.db.getDocuments();
       return documents.filter(doc => 
         doc.company_id === companyId && 
         doc.id !== excludeDocumentId &&
@@ -179,14 +186,30 @@ class CrossDocumentValidationService {
   // Store document entities in database
   async storeDocumentEntities(documentId, entities) {
     try {
-      // Store entities as JSON in document_metadata table
-      await pool.query(
-        `INSERT INTO document_metadata (document_id, entities, created_at) 
-         VALUES ($1, $2, NOW()) 
-         ON CONFLICT (document_id) DO UPDATE SET 
-         entities = $2, updated_at = NOW()`,
-        [documentId, JSON.stringify(entities)]
-      );
+      // Try using pool first, fall back to this.db if needed
+      try {
+        // Store entities as JSON in document_metadata table
+        await pool.query(
+          `INSERT INTO document_metadata (document_id, entities, created_at) 
+           VALUES ($1, $2, NOW()) 
+           ON CONFLICT (document_id) DO UPDATE SET 
+           entities = $2, updated_at = NOW()`,
+          [documentId, JSON.stringify(entities)]
+        );
+      } catch (poolError) {
+        console.log('⚠️ Pool query failed, trying db connection instead');
+        if (this.db && this.db.query) {
+          await this.db.query(
+            `INSERT INTO document_metadata (document_id, entities, created_at) 
+             VALUES ($1, $2, NOW()) 
+             ON CONFLICT (document_id) DO UPDATE SET 
+             entities = $2, updated_at = NOW()`,
+            [documentId, JSON.stringify(entities)]
+          );
+        } else {
+          throw new Error('No valid database connection available');
+        }
+      }
       
       console.log(`💾 Stored entities for document ${documentId}`);
     } catch (error) {
@@ -203,14 +226,28 @@ class CrossDocumentValidationService {
         documents
       );
       
-      // Store company metadata
-      await pool.query(
-        `INSERT INTO company_metadata (company_id, metadata, created_at) 
-         VALUES ($1, $2, NOW()) 
-         ON CONFLICT (company_id) DO UPDATE SET 
-         metadata = $2, updated_at = NOW()`,
-        [companyId, JSON.stringify(standardizedMetadata)]
-      );
+      try {
+        await pool.query(
+          `INSERT INTO company_metadata (company_id, metadata, created_at) 
+           VALUES ($1, $2, NOW()) 
+           ON CONFLICT (company_id) DO UPDATE SET 
+           metadata = $2, updated_at = NOW()`,
+          [companyId, JSON.stringify(standardizedMetadata)]
+        );
+      } catch (poolError) {
+        console.log('⚠️ Pool query failed, trying db connection instead');
+        if (this.db && this.db.query) {
+          await this.db.query(
+            `INSERT INTO company_metadata (company_id, metadata, created_at) 
+             VALUES ($1, $2, NOW()) 
+             ON CONFLICT (company_id) DO UPDATE SET 
+             metadata = $2, updated_at = NOW()`,
+            [companyId, JSON.stringify(standardizedMetadata)]
+          );
+        } else {
+          throw new Error('No valid database connection available');
+        }
+      }
       
       console.log(`📊 Updated company metadata for ${companyId}`);
       return standardizedMetadata;

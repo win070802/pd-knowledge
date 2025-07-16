@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const { db } = require('../../database');
 const { extractTextFromPDF } = require('../utils/pdfExtractor');
 const ocrService = require('../../services/ocr-service');
@@ -18,6 +19,93 @@ try {
 }
 
 const storageService = require('../../services/storage-service');
+
+// 确保元数据表存在
+async function ensureMetadataTables() {
+  try {
+    // 检查元数据表是否存在
+    const tableExists = await db.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'document_metadata'
+      );
+    `);
+    
+    // 如果表不存在，创建它们
+    if (!tableExists.rows[0].exists) {
+      console.log('📦 Creating metadata tables for cross-document validation...');
+      
+      // 读取SQL创建脚本
+      const sqlPath = path.join(__dirname, '../../scripts/create-metadata-tables.sql');
+      if (fs.existsSync(sqlPath)) {
+        const sql = fs.readFileSync(sqlPath, 'utf8');
+        await db.query(sql);
+        console.log('✅ Metadata tables created successfully');
+      } else {
+        // 如果找不到SQL文件，使用内联SQL
+        await db.query(`
+          -- Document metadata table
+          CREATE TABLE IF NOT EXISTS document_metadata (
+            id SERIAL PRIMARY KEY,
+            document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+            entities JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(document_id)
+          );
+
+          -- Company metadata table
+          CREATE TABLE IF NOT EXISTS company_metadata (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(company_id)
+          );
+
+          -- Validation logs table
+          CREATE TABLE IF NOT EXISTS validation_logs (
+            id SERIAL PRIMARY KEY,
+            document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+            validation_type VARCHAR(100) NOT NULL,
+            original_text TEXT,
+            corrected_text TEXT,
+            entities_found JSONB DEFAULT '{}',
+            corrections_applied JSONB DEFAULT '[]',
+            conflicts_resolved JSONB DEFAULT '[]',
+            confidence_score DECIMAL(3,2) DEFAULT 0.0,
+            processing_time_ms INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT NOW()
+          );
+
+          -- Entity references table for fast lookup
+          CREATE TABLE IF NOT EXISTS entity_references (
+            id SERIAL PRIMARY KEY,
+            entity_name VARCHAR(255) NOT NULL,
+            entity_type VARCHAR(50) NOT NULL,
+            document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+            company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+            confidence DECIMAL(3,2) DEFAULT 1.0,
+            created_at TIMESTAMP DEFAULT NOW()
+          );
+
+          -- Indexes for performance
+          CREATE INDEX IF NOT EXISTS idx_document_metadata_document_id ON document_metadata(document_id);
+          CREATE INDEX IF NOT EXISTS idx_company_metadata_company_id ON company_metadata(company_id);
+          CREATE INDEX IF NOT EXISTS idx_validation_logs_document_id ON validation_logs(document_id);
+          CREATE INDEX IF NOT EXISTS idx_entity_references_company_id ON entity_references(company_id);
+          CREATE INDEX IF NOT EXISTS idx_entity_references_entity_name ON entity_references(entity_name);
+        `);
+        console.log('✅ Metadata tables created successfully (inline SQL)');
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error ensuring metadata tables exist:', error);
+    // 继续执行，不中断上传流程
+  }
+}
 
 // Get all documents
 const getDocuments = async (req, res) => {
@@ -50,6 +138,9 @@ const uploadDocument = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ success: false, error: 'No file uploaded' });
     }
+
+    // 确保元数据表存在，以支持交叉文档验证
+    await ensureMetadataTables();
 
     const tempFilePath = req.file.path;
     const fileName = req.file.filename;
@@ -125,64 +216,41 @@ const uploadDocument = async (req, res) => {
     // Handle duplicate documents
     if (processingResult.duplicateAnalysis.isDuplicate) {
       const recommendation = processingResult.duplicateAnalysis.recommendation;
-      
-      if (recommendation === 'merge') {
-        // Merge with existing document
-        const similarDoc = processingResult.duplicateAnalysis.similarDocs[0];
-        const existingDoc = await db.getDocumentById(similarDoc.id);
-        
-        if (existingDoc) {
-          // Update existing document with merged content
-          const updatedDoc = await db.updateDocument(existingDoc.id, {
-            content_text: contentText, // Use the enhanced merged content
-            file_size: fileSize,
-            metadata: {
-              ...existingDoc.metadata,
-              mergedWith: originalName,
-              lastMergeDate: new Date().toISOString(),
-              mergeReason: similarDoc.reason
-            }
-          });
-          
-          documentToSave = updatedDoc;
-          mergeInfo = {
-            action: 'merged',
-            targetDocument: existingDoc.original_name,
-            reason: similarDoc.reason
-          };
-          
-          console.log(`🔗 Document merged with existing: ${existingDoc.original_name}`);
-        }
-      } else if (recommendation === 'replace') {
-        // Replace existing document
-        const similarDoc = processingResult.duplicateAnalysis.similarDocs[0];
-        const existingDoc = await db.getDocumentById(similarDoc.id);
-        
-        if (existingDoc) {
-          const updatedDoc = await db.updateDocument(existingDoc.id, {
-            filename: fileName,
+      const similarDoc = processingResult.duplicateAnalysis.similarDocs[0];
+      const existingDoc = await db.getDocumentById(similarDoc.id);
+      let companyInfo = null;
+      if (finalCompany && finalCompany.code) {
+        companyInfo = await db.getCompanyByCode(finalCompany.code);
+      }
+      if (existingDoc) {
+        // Merge dữ liệu cũ và mới
+        const merged = await mergeDocumentData(existingDoc, {
+          content_text: contentText,
+          metadata: {
+            ...processingResult.structureAnalysis,
+            ...processingResult.classification,
+            ...processingResult.duplicateAnalysis,
+            ...processingResult,
             original_name: originalName,
-            file_path: finalStorageResult.path,
-            file_size: fileSize,
-            content_text: contentText,
-            company_id: finalCompanyId,
-            category: category,
-            metadata: {
-              replacedAt: new Date().toISOString(),
-              previousVersion: existingDoc.original_name,
-              replaceReason: similarDoc.reason
-            }
-          });
-          
-          documentToSave = updatedDoc;
-          mergeInfo = {
-            action: 'replaced',
-            previousDocument: existingDoc.original_name,
-            reason: similarDoc.reason
-          };
-          
-          console.log(`🔄 Document replaced existing: ${existingDoc.original_name}`);
-        }
+            filename: fileName,
+            fileSize: fileSize,
+            uploader: req.user ? req.user.username : null
+          }
+        }, companyInfo);
+        // Update existing document với dữ liệu đã merge
+        const updatedDoc = await db.updateDocument(existingDoc.id, {
+          content_text: merged.content_text,
+          file_size: fileSize,
+          metadata: merged.metadata,
+          // Có thể cập nhật thêm các trường khác nếu cần
+        });
+        documentToSave = updatedDoc;
+        mergeInfo = {
+          action: 'merged',
+          targetDocument: existingDoc.original_name,
+          reason: similarDoc.reason
+        };
+        console.log(`🔗 Document deeply merged with existing: ${existingDoc.original_name}`);
       }
     }
 
@@ -222,6 +290,16 @@ const uploadDocument = async (req, res) => {
     try {
       console.log(`🔄 Starting cross-document validation for document ${documentToSave.id}...`);
       
+      // 配置visionOCRService以使用正确的数据库连接
+      if (typeof visionOCRService.setDbConnection === 'function') {
+        visionOCRService.setDbConnection(db);
+      }
+      
+      // 确保验证表存在
+      if (typeof visionOCRService.ensureValidationTablesExist === 'function') {
+        await visionOCRService.ensureValidationTablesExist();
+      }
+      
       const validationResult = await visionOCRService.performCrossDocumentValidation(
         documentToSave.id,
         contentText,
@@ -229,11 +307,11 @@ const uploadDocument = async (req, res) => {
         finalCompanyId
       );
       
-      if (validationResult.corrections.length > 0) {
+      if (validationResult.corrections && validationResult.corrections.length > 0) {
         console.log(`✅ Applied ${validationResult.corrections.length} OCR corrections to document ${documentToSave.id}`);
       }
       
-      if (validationResult.conflicts.length > 0) {
+      if (validationResult.conflicts && validationResult.conflicts.length > 0) {
         console.log(`📋 Resolved ${validationResult.conflicts.length} entity conflicts for document ${documentToSave.id}`);
       }
       
@@ -302,6 +380,63 @@ const uploadDocument = async (req, res) => {
     });
   }
 };
+
+// Merge and normalize document data (AI-powered)
+async function mergeDocumentData(oldDoc, newDoc, companyInfo) {
+  // 1. Merge content_text: lấy bản dài hơn, hoặc bản đã được AI sửa lỗi tốt hơn
+  let mergedContent = oldDoc.content_text || '';
+  if (newDoc.content_text && newDoc.content_text.length > mergedContent.length) {
+    // Sử dụng AI để sửa lỗi chính tả nếu bản mới tốt hơn
+    mergedContent = await ocrService.correctOCRText(newDoc.content_text);
+  } else if (oldDoc.content_text) {
+    mergedContent = await ocrService.correctOCRText(oldDoc.content_text);
+  }
+
+  // 2. Merge metadata: ưu tiên thông tin đúng từ companyInfo, hoặc bản nào tốt hơn
+  const oldMeta = oldDoc.metadata || {};
+  const newMeta = newDoc.metadata || {};
+  const mergedMeta = { ...oldMeta, ...newMeta };
+
+  // Merge CEO, company name, ...
+  if (companyInfo) {
+    mergedMeta.companyCode = companyInfo.code;
+    mergedMeta.companyName = companyInfo.full_name;
+    mergedMeta.ceo = companyInfo.ceo;
+    mergedMeta.chairman = companyInfo.chairman;
+    mergedMeta.keywords = companyInfo.keywords;
+  } else {
+    // Nếu không có companyInfo, lấy bản nào đúng hơn (ưu tiên bản không lỗi chính tả)
+    mergedMeta.ceo = newMeta.ceo && newMeta.ceo.length > 3 ? newMeta.ceo : oldMeta.ceo;
+    mergedMeta.companyName = newMeta.companyName || oldMeta.companyName;
+  }
+
+  // 3. Merge các trường dạng mảng: keyTerms, knowledge, learn, mainTopics, ...
+  function mergeArray(a, b) {
+    return Array.from(new Set([...(a || []), ...(b || [])])).filter(Boolean);
+  }
+  mergedMeta.keyTerms = mergeArray(oldMeta.keyTerms, newMeta.keyTerms);
+  mergedMeta.knowledge = mergeArray(oldMeta.knowledge, newMeta.knowledge);
+  mergedMeta.learn = mergeArray(oldMeta.learn, newMeta.learn);
+  mergedMeta.mainTopics = mergeArray(oldMeta.mainTopics, newMeta.mainTopics);
+
+  // 4. Lưu lịch sử các lần upload
+  mergedMeta.uploadHistory = [
+    ...(oldMeta.uploadHistory || []),
+    {
+      date: new Date().toISOString(),
+      filename: newDoc.original_name || newDoc.filename,
+      uploader: newDoc.uploader || null
+    }
+  ];
+
+  // 5. Merge các trường khác nếu cần
+  // ...
+
+  return {
+    content_text: mergedContent,
+    metadata: mergedMeta
+  };
+}
 
 // Delete document
 const deleteDocument = async (req, res) => {
