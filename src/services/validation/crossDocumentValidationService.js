@@ -10,8 +10,29 @@ class CrossDocumentValidationService {
   
   // Set a custom database connection
   setDbConnection(dbConnection) {
-    this.db = dbConnection;
-    console.log('✅ Database connection set for Cross-Document Validation Service');
+    try {
+      // Kiểm tra xem dbConnection có hợp lệ không
+      if (!dbConnection) {
+        console.error('❌ Invalid database connection provided to CrossDocumentValidationService');
+        throw new Error('Invalid database connection');
+      }
+
+      // Kiểm tra các phương thức cần thiết
+      const requiredMethods = ['getDocuments', 'updateDocument'];
+      for (const method of requiredMethods) {
+        if (typeof dbConnection[method] !== 'function') {
+          console.error(`❌ Database connection missing required method: ${method}`);
+          throw new Error(`Database connection missing required method: ${method}`);
+        }
+      }
+
+      this.db = dbConnection;
+      console.log('✅ Database connection set for Cross-Document Validation Service');
+      return true;
+    } catch (error) {
+      console.error('❌ Error setting database connection:', error);
+      throw error;
+    }
   }
 
   // Main method: Cross-validate new document with existing ones
@@ -186,6 +207,16 @@ class CrossDocumentValidationService {
   // Store document entities in database
   async storeDocumentEntities(documentId, entities) {
     try {
+      // Kiểm tra kết nối database trước khi thực hiện
+      if (!pool) {
+        throw new Error('Database pool is not available');
+      }
+
+      // Kiểm tra this.db
+      if (!this.db) {
+        throw new Error('Database connection is not available');
+      }
+
       // Try using pool first, fall back to this.db if needed
       try {
         // Store entities as JSON in document_metadata table
@@ -198,28 +229,42 @@ class CrossDocumentValidationService {
         );
       } catch (poolError) {
         console.log('⚠️ Pool query failed, trying db connection instead');
-        if (this.db && this.db.query) {
-          await this.db.query(
-            `INSERT INTO document_metadata (document_id, entities, created_at) 
-             VALUES ($1, $2, NOW()) 
-             ON CONFLICT (document_id) DO UPDATE SET 
-             entities = $2, updated_at = NOW()`,
-            [documentId, JSON.stringify(entities)]
-          );
-        } else {
-          throw new Error('No valid database connection available');
+        
+        // Kiểm tra lại this.db.query
+        if (!this.db.query || typeof this.db.query !== 'function') {
+          throw new Error('No valid database query function available');
         }
+        
+        await this.db.query(
+          `INSERT INTO document_metadata (document_id, entities, created_at) 
+           VALUES ($1, $2, NOW()) 
+           ON CONFLICT (document_id) DO UPDATE SET 
+           entities = $2, updated_at = NOW()`,
+          [documentId, JSON.stringify(entities)]
+        );
       }
       
       console.log(`💾 Stored entities for document ${documentId}`);
+      return true;
     } catch (error) {
       console.error('❌ Error storing document entities:', error);
+      throw error; // Re-throw để caller có thể xử lý
     }
   }
 
   // Update company-wide metadata
   async updateCompanyMetadata(companyId, mergedEntities, documents) {
     try {
+      // Kiểm tra kết nối database trước khi thực hiện
+      if (!pool) {
+        throw new Error('Database pool is not available');
+      }
+
+      // Kiểm tra this.db
+      if (!this.db) {
+        throw new Error('Database connection is not available');
+      }
+
       const standardizedMetadata = await this.entityExtractor.generateStandardizedMetadata(
         mergedEntities, 
         companyId, 
@@ -236,17 +281,19 @@ class CrossDocumentValidationService {
         );
       } catch (poolError) {
         console.log('⚠️ Pool query failed, trying db connection instead');
-        if (this.db && this.db.query) {
-          await this.db.query(
-            `INSERT INTO company_metadata (company_id, metadata, created_at) 
-             VALUES ($1, $2, NOW()) 
-             ON CONFLICT (company_id) DO UPDATE SET 
-             metadata = $2, updated_at = NOW()`,
-            [companyId, JSON.stringify(standardizedMetadata)]
-          );
-        } else {
-          throw new Error('No valid database connection available');
+        
+        // Kiểm tra lại this.db.query
+        if (!this.db.query || typeof this.db.query !== 'function') {
+          throw new Error('No valid database query function available');
         }
+        
+        await this.db.query(
+          `INSERT INTO company_metadata (company_id, metadata, created_at) 
+           VALUES ($1, $2, NOW()) 
+           ON CONFLICT (company_id) DO UPDATE SET 
+           metadata = $2, updated_at = NOW()`,
+          [companyId, JSON.stringify(standardizedMetadata)]
+        );
       }
       
       console.log(`📊 Updated company metadata for ${companyId}`);
@@ -254,7 +301,7 @@ class CrossDocumentValidationService {
       
     } catch (error) {
       console.error('❌ Error updating company metadata:', error);
-      return null;
+      throw error; // Re-throw để caller có thể xử lý
     }
   }
 

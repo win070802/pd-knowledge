@@ -45,7 +45,7 @@ Document Search → AI Processing → Response
 ```
 
 ### 3. Company Management
-- **5 Companies**: PDH, PDI, PDE, PDHH, RH
+- **5 Companies**: PDH, PDI, PDE, PDHOS, RHS
 - **Auto-detection** from filename patterns
 - **Folder structure**: `uploads/{Company}/{Category}/`
 

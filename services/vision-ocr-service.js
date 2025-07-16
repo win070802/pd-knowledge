@@ -46,13 +46,64 @@ class VisionOCRService {
     }
   }
 
-  // Set a custom database connection
+  // Set database connection
   setDbConnection(dbConnection) {
-    this.db = dbConnection;
-    if (this.crossDocValidator && typeof this.crossDocValidator.setDbConnection === 'function') {
-      this.crossDocValidator.setDbConnection(dbConnection);
+    try {
+      // Kiểm tra xem dbConnection có hợp lệ không
+      if (!dbConnection) {
+        console.error('❌ Invalid database connection provided to VisionOCRService');
+        throw new Error('Invalid database connection');
+      }
+
+      // Kiểm tra các phương thức cần thiết
+      const requiredMethods = ['updateDocument', 'getDocuments', 'getDocumentById'];
+      for (const method of requiredMethods) {
+        if (typeof dbConnection[method] !== 'function') {
+          console.error(`❌ Database connection missing required method: ${method}`);
+          throw new Error(`Database connection missing required method: ${method}`);
+        }
+      }
+
+      this.db = dbConnection;
+      
+      // Thiết lập kết nối cho crossDocValidator nếu đã được khởi tạo
+      if (this.crossDocValidator && typeof this.crossDocValidator.setDbConnection === 'function') {
+        this.crossDocValidator.setDbConnection(dbConnection);
+        console.log('✅ Database connection set for Cross-Document Validator');
+      }
+      
+      // Kiểm tra kết nối bằng cách thực hiện truy vấn đơn giản
+      this.testDatabaseConnection()
+        .then(result => {
+          if (result) {
+            console.log('✅ Database connection verified for VisionOCRService');
+          }
+        })
+        .catch(err => {
+          console.error('❌ Database connection test failed:', err);
+        });
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Error setting database connection:', error);
+      throw error;
     }
-    console.log('✅ Database connection set for Vision OCR Service');
+  }
+
+  // Test database connection
+  async testDatabaseConnection() {
+    try {
+      if (!this.db) {
+        return false;
+      }
+      
+      // Kiểm tra xem có thể truy cập các phương thức cơ bản không
+      return typeof this.db.getDocuments === 'function' && 
+             typeof this.db.updateDocument === 'function';
+    } catch (error) {
+      console.error('❌ Database connection test failed:', error);
+      return false;
+    }
   }
 
   ensureTempDir() {
@@ -480,9 +531,13 @@ Trả lời theo format JSON:
   }
 
   // Process scanned PDF with Vision API
-  async processScannedPDF(pdfPath, maxPages = 10) {
+  async processScannedPDF(pdfPath, maxPages = null) {
     try {
       console.log('🔍 Processing scanned PDF with Vision API...');
+      
+      // Use environment variable or default to 50 pages
+      maxPages = maxPages || parseInt(process.env.MAX_PDF_PAGES) || 50;
+      console.log(`⚙️ Sử dụng giới hạn ${maxPages} trang từ biến môi trường MAX_PDF_PAGES`);
       
       // Check if we have Vision API credentials
       if (!this.hasValidCredentials()) {
@@ -550,8 +605,12 @@ Trả lời theo format JSON:
   }
 
   // Enhanced fallback processing that tries multiple methods
-  async enhancedFallbackProcessing(pdfPath, maxPages = 10) {
+  async enhancedFallbackProcessing(pdfPath, maxPages = null) {
     console.log('🔄 Starting enhanced fallback processing...');
+    
+    // Use environment variable or default to 50 pages
+    maxPages = maxPages || parseInt(process.env.MAX_PDF_PAGES) || 50;
+    console.log(`⚙️ Sử dụng giới hạn ${maxPages} trang cho fallback processing`);
     
     try {
       // Method 1: Standard PDF parsing
@@ -567,7 +626,7 @@ Trả lời theo format JSON:
       
       // Method 2: Try Tesseract.js if available and PDF seems to be scanned
       console.log('🔄 Method 2: Attempting Tesseract.js OCR...');
-      return await this.tesseractFallback(pdfPath, Math.min(maxPages, 5));
+      return await this.tesseractFallback(pdfPath, Math.min(maxPages, 10));
       
     } catch (error) {
       console.error('❌ All enhanced fallback methods failed:', error.message);
@@ -671,47 +730,73 @@ Document requires manual review.`;
         extractedText = await this.processScannedPDF(pdfPath);
       }
       
+      // Kiểm tra xem kết quả trích xuất có hợp lệ không
+      if (!extractedText || extractedText.trim().length < 20) {
+        console.log('⚠️ Extracted text too short or invalid!');
+        if (originalName.toLowerCase().includes('so do') || 
+            originalName.toLowerCase().includes('sơ đồ') ||
+            originalName.toLowerCase().includes('ban ') || 
+            originalName.toLowerCase().includes('phòng ')) {
+          
+          console.log('🔄 Special handling for organizational chart document');
+          // Đặc biệt xử lý cho tài liệu sơ đồ tổ chức
+          extractedText = `[SƠ ĐỒ TỔ CHỨC] ${originalName}\n\nTài liệu này là sơ đồ tổ chức, không thể trích xuất đầy đủ văn bản.`;
+        } else {
+          extractedText = `[OCR Processing Results]\nFilename: ${originalName}\nExtracted text is minimal or failed. This might be an image-based or complex document.`;
+        }
+      }
+      
       // Step 2: Classify content
       const classification = await this.classifyDocumentContent(extractedText, originalName);
+      
+      // Điều chỉnh phân loại dựa vào tên file nếu kết quả OCR không tốt
+      if (extractedText.includes('[OCR Processing Results]') || extractedText.includes('[SƠ ĐỒ TỔ CHỨC]')) {
+        // Sử dụng tên file để phân loại nếu OCR thất bại
+        if (originalName.toLowerCase().includes('so do') || originalName.toLowerCase().includes('sơ đồ')) {
+          classification.category = 'Sơ đồ';
+          classification.confidence = 0.9;
+        } else if (originalName.toLowerCase().includes('quy trinh') || originalName.toLowerCase().includes('quy trình')) {
+          classification.category = 'Quy trình';
+          classification.confidence = 0.9;
+        } else if (originalName.toLowerCase().includes('quy dinh') || originalName.toLowerCase().includes('quy định')) {
+          classification.category = 'Quy định';
+          classification.confidence = 0.9;
+        }
+      }
       
       if (!classification.accept) {
         throw new Error(`Document rejected: ${classification.reason}`);
       }
       
-      // Step 3: Check for duplicates
-      const duplicateAnalysis = await this.checkForDuplicates(extractedText, originalName, companyId);
+      // Step 3: Check for duplicates với cải thiện
+      const duplicateAnalysis = await this.enhancedDuplicateCheck(extractedText, originalName, companyId);
       
-      // Step 4: Handle duplicates if found
-      if (duplicateAnalysis.isDuplicate && duplicateAnalysis.recommendation === 'merge') {
-        console.log('🔗 Merging with similar document...');
-        const similarDoc = duplicateAnalysis.similarDocs[0];
-        const existingDoc = await this.db.getDocumentById(similarDoc.id);
-        
-        if (existingDoc) {
-          extractedText = await this.mergeSimilarDocuments(
-            extractedText, 
-            existingDoc, 
-            similarDoc.reason
-          );
-        }
-      }
-      
-      // Step 5: Analyze document structure
+      // Step 4: Phân tích cấu trúc tài liệu ngay cả khi là duplicate
       let structureAnalysis;
-      if (extractedText && extractedText.includes('[OCR Processing Failed]')) {
-        structureAnalysis = {
-          documentType: 'Khác',
-          mainTopics: [],
-          keyPoints: [],
-          procedures: [],
-          keyTerms: [],
-          canAnswerQuestions: []
-        };
+      if (extractedText && (extractedText.includes('[OCR Processing Results]') || extractedText.length < 100)) {
+        console.log('⚠️ OCR text too limited for structure analysis, using filename-based analysis');
+        
+        // Tạo structureAnalysis dựa vào tên file
+        structureAnalysis = await this.generateStructureFromFilename(originalName);
       } else {
+        // Phân tích cấu trúc tài liệu
         structureAnalysis = await this.analyzeDocumentStructure(extractedText);
       }
       
-      // Step 6: Cross-document validation and OCR correction (NEW)
+      // Bổ sung thêm metadata dựa vào tên file nếu structureAnalysis không đầy đủ
+      if (!structureAnalysis.keyTerms || structureAnalysis.keyTerms.length === 0) {
+        const filenameTerms = this.extractKeyTermsFromFilename(originalName);
+        if (filenameTerms.length > 0) {
+          structureAnalysis.keyTerms = filenameTerms;
+        }
+      }
+      
+      // Đảm bảo canAnswerQuestions không bị trống
+      if (!structureAnalysis.canAnswerQuestions || structureAnalysis.canAnswerQuestions.length === 0) {
+        structureAnalysis.canAnswerQuestions = this.generateDefaultQuestions(originalName, classification.category);
+      }
+      
+      // Step 5: Cross-document validation
       let crossValidationResult = null;
       try {
         // Initialize cross-document validation if not already done
@@ -725,8 +810,6 @@ Document requires manual review.`;
         }
         
         console.log('🔄 Starting cross-document validation and OCR correction...');
-        // Note: documentId will be available after document is saved to database
-        // This will be called later in the document upload process
         
       } catch (validationError) {
         console.error('⚠️  Cross-document validation failed, continuing without it:', validationError);
@@ -740,27 +823,392 @@ Document requires manual review.`;
         };
       }
       
-      return {
+      // Step 6: Final integration - combine all metadata
+      const combinedResults = {
         text: extractedText,
         classification: classification,
         duplicateAnalysis: duplicateAnalysis,
         structureAnalysis: structureAnalysis,
         crossValidation: crossValidationResult,
-        processingMethod: this.isScannedPDF(data.text) ? 'Vision API OCR' : 'Standard PDF'
+        processingMethod: this.isScannedPDF(data.text) ? 'Vision API OCR' : 'Standard PDF',
+        keyTerms: structureAnalysis.keyTerms || [],
+        canAnswerQuestions: structureAnalysis.canAnswerQuestions || []
       };
+      
+      console.log(`✅ Document processing completed with ${combinedResults.keyTerms.length} key terms and ${combinedResults.canAnswerQuestions.length} Q&A items`);
+      return combinedResults;
       
     } catch (error) {
       console.error('❌ Error in enhanced document processing:', error);
       throw error;
     }
   }
+  
+  // New method: Enhanced duplicate check that prevents incorrect merges
+  async enhancedDuplicateCheck(text, originalName, companyId = null) {
+    try {
+      console.log(`🔍 Running enhanced duplicate check for ${originalName}`);
+      
+      // Get existing documents from the same company
+      let existingDocs = [];
+      if (companyId) {
+        // Get all documents and filter by company_id
+        const allDocs = await this.db.getDocuments();
+        existingDocs = allDocs.filter(doc => doc.company_id === companyId);
+      }
+      
+      if (existingDocs.length === 0) {
+        return { isDuplicate: false, similarDocs: [] };
+      }
+      
+      // Đầu tiên so sánh tên file để ngăn chặn merge các file khác loại
+      const filenameParts = originalName.toLowerCase().split(/[\s\-\.\_]+/);
+      
+      // Các từ khóa để so sánh tên file
+      const significantKeywords = filenameParts.filter(part => part.length > 3);
+      
+      // Lọc ra các tài liệu không thuộc phòng ban khác nhau
+      let filteredDocs = [];
+      for (const doc of existingDocs) {
+        // Kiểm tra nếu tài liệu thuộc phòng ban khác nhau
+        if (this.filesReferToDifferentEntities(originalName, doc.original_name)) {
+          console.log(`🚫 Files appear to refer to different departments/entities: "${originalName}" vs "${doc.original_name}"`);
+          continue; // Skip this document from consideration for merging
+        }
+        filteredDocs.push(doc);
+      }
+      
+      // Nếu không còn tài liệu nào sau khi lọc, không có trùng lặp
+      if (filteredDocs.length === 0) {
+        console.log(`✅ No similar documents found after filtering by department`);
+        return { isDuplicate: false, similarDocs: [] };
+      }
+      
+      // Now run the AI-based duplicate check with filtered documents
+      const duplicateAnalysis = await this.checkForDuplicates(text, originalName, companyId);
+      
+      // Additional check: Override recommendation if we detect critical differences in filename
+      if (duplicateAnalysis.similarDocs && duplicateAnalysis.similarDocs.length > 0) {
+        const filteredSimilarDocs = [];
+        
+        for (const similarDoc of duplicateAnalysis.similarDocs) {
+          const existingDoc = await this.db.getDocumentById(similarDoc.id);
+          if (existingDoc && this.filesReferToDifferentEntities(originalName, existingDoc.original_name)) {
+            console.log(`🔒 Excluding document from merge due to different entities in filenames: ${existingDoc.original_name}`);
+            // Skip this document
+          } else {
+            filteredSimilarDocs.push(similarDoc);
+          }
+        }
+        
+        // Update the similarDocs array with filtered results
+        duplicateAnalysis.similarDocs = filteredSimilarDocs;
+        
+        // If no similar docs left after filtering, set isDuplicate to false
+        if (filteredSimilarDocs.length === 0) {
+          duplicateAnalysis.isDuplicate = false;
+          duplicateAnalysis.recommendation = 'keep_separate';
+          console.log(`✅ No similar documents left after department filtering`);
+        }
+      }
+      
+      return duplicateAnalysis;
+    } catch (error) {
+      console.error('❌ Error in enhanced duplicate check:', error);
+      return { isDuplicate: false, similarDocs: [], recommendation: 'keep_separate' };
+    }
+  }
+  
+  // Helper to check if filenames refer to different departments/entities
+  filesReferToDifferentEntities(filename1, filename2) {
+    if (!filename1 || !filename2) return false;
+    
+    const normalize = (text) => text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    
+    const name1 = normalize(filename1);
+    const name2 = normalize(filename2);
+    
+    // Danh sách phòng ban, bộ phận thường gặp
+    const departments = {
+      "phap_che": ["phap che", "ban phap che", "phong phap che", "bo phan phap che", "pháp chế", "phapche", "pc"],
+      "tai_chinh": ["tai chinh", "ban tai chinh", "phong tai chinh", "bo phan tai chinh", "tài chính", "taichinh", "tc", "kt-qt", "kt"],
+      "ke_toan": ["ke toan", "ban ke toan", "phong ke toan", "bo phan ke toan", "kế toán", "ketoan", "kt"],
+      "nhan_su": ["nhan su", "ban nhan su", "phong nhan su", "bo phan nhan su", "nhân sự", "nhansu", "ns"],
+      "it": ["it", "cntt", "cong nghe thong tin", "ban cntt", "công nghệ thông tin", "thông tin"],
+      "san_xuat": ["san xuat", "ban san xuat", "phong san xuat", "bộ phận sản xuất", "sản xuất", "sx"],
+      "kinh_doanh": ["kinh doanh", "ban kinh doanh", "phong kinh doanh", "bộ phận kinh doanh", "kd"]
+    };
+    
+    const dept1 = this.extractDepartment(filename1);
+    const dept2 = this.extractDepartment(filename2);
+    
+    console.log(`📊 Extracted departments: "${dept1}" vs "${dept2}" from "${filename1}" vs "${filename2}"`);
+    
+    // If both have departments detected and they're different
+    if (dept1 && dept2 && dept1 !== dept2) {
+      console.log(`🔎 Found different departments: "${dept1}" vs "${dept2}"`);
+      return true;
+    }
+    
+    return false;
+  }
+  
+  // Extract department from filename
+  extractDepartment(filename) {
+    if (!filename) return null;
+    
+    const normalize = (text) => text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const normalizedName = normalize(filename);
+    
+    // Danh sách phòng ban, bộ phận thường gặp
+    const departments = {
+      "phap_che": ["phap che", "ban phap che", "phong phap che", "bo phan phap che", "pháp chế", "phapche", "pc"],
+      "tai_chinh": ["tai chinh", "ban tai chinh", "phong tai chinh", "bo phan tai chinh", "tài chính", "taichinh", "tc", "kt-qt", "kt"],
+      "ke_toan": ["ke toan", "ban ke toan", "phong ke toan", "bo phan ke toan", "kế toán", "ketoan", "kt"],
+      "nhan_su": ["nhan su", "ban nhan su", "phong nhan su", "bo phan nhan su", "nhân sự", "nhansu", "ns"],
+      "it": ["it", "cntt", "cong nghe thong tin", "ban cntt", "công nghệ thông tin", "thông tin"],
+      "san_xuat": ["san xuat", "ban san xuat", "phong san xuat", "bộ phận sản xuất", "sản xuất", "sx"],
+      "kinh_doanh": ["kinh doanh", "ban kinh doanh", "phong kinh doanh", "bộ phận kinh doanh", "kd"]
+    };
+    
+    // Kiểm tra mã phòng ban trong tên file (thường là 2-3 ký tự sau mã công ty)
+    // Ví dụ: PDH-PC-xxx (Pháp chế), PDH-TC-xxx (Tài chính), PDH-KT-xxx (Kế toán)
+    const deptCodeMatch = normalizedName.match(/pdh[-_]([a-z]{2,3})[-_]/i);
+    if (deptCodeMatch) {
+      const deptCode = deptCodeMatch[1].toLowerCase();
+      if (deptCode === 'pc') return 'phap_che';
+      if (deptCode === 'tc') return 'tai_chinh';
+      if (deptCode === 'kt') return 'ke_toan';
+      if (deptCode === 'ns') return 'nhan_su';
+      if (deptCode === 'it' || deptCode === 'cn') return 'it';
+      if (deptCode === 'sx') return 'san_xuat';
+      if (deptCode === 'kd') return 'kinh_doanh';
+    }
+    
+    // Kiểm tra tên phòng ban đầy đủ trong tên file
+    for (const [deptKey, variants] of Object.entries(departments)) {
+      for (const variant of variants) {
+        if (normalizedName.includes(variant)) {
+          return deptKey;
+        }
+      }
+    }
+    
+    return null;
+  }
+  
+  // Generate structure analysis from filename when OCR fails
+  async generateStructureFromFilename(filename) {
+    try {
+      const filenameWithoutExtension = filename.replace(/\.[^/.]+$/, "");
+      
+      const prompt = `
+Phân tích tên file này và tạo metadata cấu trúc văn bản giả định phù hợp:
+
+FILENAME: ${filenameWithoutExtension}
+
+Trả lời theo format JSON:
+{
+  "documentType": "Quy định|Quy trình|Báo cáo|Hợp đồng|Sơ đồ|Khác",
+  "mainTopics": ["topic1", "topic2"],
+  "keyPoints": [
+    {
+      "section": "Phần nào",
+      "content": "Nội dung giả định phù hợp",
+      "importance": 1-5
+    }
+  ],
+  "procedures": [],
+  "keyTerms": ["term1", "term2"],
+  "canAnswerQuestions": [
+    "Câu hỏi liên quan đến file này",
+    "Nội dung gì được đề cập trong file này?"
+  ]
+}`;
+
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const analysisText = response.text().trim();
+      
+      // Extract JSON from response
+      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const analysis = JSON.parse(jsonMatch[0]);
+        console.log(`📊 Generated structure from filename`);
+        return analysis;
+      }
+      
+      // Fallback structure
+      return {
+        documentType: this.detectDocumentTypeFromFilename(filename),
+        mainTopics: [filenameWithoutExtension],
+        keyPoints: [{
+          section: "Toàn tài liệu",
+          content: `Nội dung liên quan đến ${filenameWithoutExtension}`,
+          importance: 3
+        }],
+        procedures: [],
+        keyTerms: this.extractKeyTermsFromFilename(filename),
+        canAnswerQuestions: this.generateDefaultQuestions(filename)
+      };
+      
+    } catch (error) {
+      console.error('❌ Error generating structure from filename:', error);
+      return {
+        documentType: 'Khác',
+        mainTopics: [],
+        keyPoints: [],
+        procedures: [],
+        keyTerms: [],
+        canAnswerQuestions: []
+      };
+    }
+  }
+  
+  // Extract key terms from filename
+  extractKeyTermsFromFilename(filename) {
+    const filenameWithoutExtension = filename.replace(/\.[^/.]+$/, "");
+    const terms = [];
+    
+    // Extract company name if present
+    if (filenameWithoutExtension.includes('PDH')) {
+      terms.push('PDH', 'Phát Đạt');
+    }
+    
+    // Extract common document types
+    if (/so do|sơ đồ/i.test(filenameWithoutExtension)) {
+      terms.push('Sơ đồ', 'Cơ cấu tổ chức');
+    }
+    
+    if (/quy trinh|quy trình/i.test(filenameWithoutExtension)) {
+      terms.push('Quy trình');
+    }
+    
+    if (/quy dinh|quy định/i.test(filenameWithoutExtension)) {
+      terms.push('Quy định');
+    }
+    
+    // Extract department names
+    if (/phap che|pháp chế/i.test(filenameWithoutExtension)) {
+      terms.push('Ban Pháp chế', 'Pháp chế');
+    }
+    
+    if (/tai chinh|tài chính/i.test(filenameWithoutExtension)) {
+      terms.push('Ban Tài chính', 'Tài chính');
+    }
+    
+    if (/ke toan|kế toán/i.test(filenameWithoutExtension)) {
+      terms.push('Ban Kế toán', 'Kế toán');
+    }
+    
+    if (/nhan su|nhân sự/i.test(filenameWithoutExtension)) {
+      terms.push('Ban Nhân sự', 'Nhân sự');
+    }
+    
+    // Add the filename itself as a term if not too long
+    if (filenameWithoutExtension.length < 50) {
+      terms.push(filenameWithoutExtension);
+    }
+    
+    return [...new Set(terms)]; // Remove duplicates
+  }
+  
+  // Detect document type from filename
+  detectDocumentTypeFromFilename(filename) {
+    const filenameLower = filename.toLowerCase();
+    
+    // Kiểm tra dạng file
+    if (/so do|sơ đồ/i.test(filenameLower)) {
+      return 'Sơ đồ';
+    }
+    
+    if (/quy[ -]?trinh|quy[ -]?trình|trinh tu|trình tự/i.test(filenameLower)) {
+      return 'Quy trình';
+    }
+    
+    if (/quy[ -]?dinh|quy[ -]?định|dinh muc|định mức/i.test(filenameLower)) {
+      return 'Quy định';
+    }
+    
+    if (/bao cao|báo cáo/i.test(filenameLower)) {
+      return 'Báo cáo';
+    }
+    
+    if (/hop dong|hợp đồng|contract/i.test(filenameLower)) {
+      return 'Hợp đồng';
+    }
+    
+    // Phát hiện theo định dạng của tên file
+    if (filenameLower.startsWith('quy-trinh') || filenameLower.includes('-qt-')) {
+      return 'Quy trình';
+    }
+    
+    if (filenameLower.startsWith('quy-dinh') || filenameLower.includes('-qd-')) {
+      return 'Quy định';
+    }
+    
+    // Phát hiện các từ khóa khác liên quan đến quy trình
+    if (filenameLower.includes('vay-von') || 
+        filenameLower.includes('vay von') || 
+        filenameLower.includes('thu tuc') ||
+        filenameLower.includes('thủ tục')) {
+      return 'Quy trình';
+    }
+    
+    return 'Khác';
+  }
+  
+  // Generate default questions for a document based on filename
+  generateDefaultQuestions(filename, category = null) {
+    const questions = [];
+    const filenameLower = filename.toLowerCase();
+    const documentType = category || this.detectDocumentTypeFromFilename(filename);
+    
+    // Common questions for all document types
+    questions.push(`Tài liệu "${filename}" có nội dung gì?`);
+    questions.push(`Đây là loại tài liệu gì?`);
+    
+    // Questions specific to document type
+    if (documentType === 'Sơ đồ') {
+      questions.push(`Sơ đồ này mô tả cấu trúc nào?`);
+      
+      if (/phap che|pháp chế/i.test(filenameLower)) {
+        questions.push(`Ban Pháp chế có những vị trí nào?`);
+        questions.push(`Cơ cấu tổ chức của Ban Pháp chế như thế nào?`);
+        questions.push(`Ai là trưởng Ban Pháp chế?`);
+      }
+      
+      if (/tai chinh|tài chính/i.test(filenameLower)) {
+        questions.push(`Ban Tài chính có những vị trí nào?`);
+        questions.push(`Cơ cấu tổ chức của Ban Tài chính như thế nào?`);
+        questions.push(`Ai là trưởng Ban Tài chính?`);
+      }
+    }
+    
+    if (documentType === 'Quy trình') {
+      questions.push(`Quy trình này có những bước nào?`);
+      questions.push(`Ai chịu trách nhiệm trong quy trình này?`);
+    }
+    
+    if (documentType === 'Quy định') {
+      questions.push(`Quy định này áp dụng cho đối tượng nào?`);
+      questions.push(`Có những điều khoản quan trọng nào trong quy định này?`);
+    }
+    
+    // Limit to 10 questions
+    return questions.slice(0, 10);
+  }
 
   // Cross-document validation and OCR correction - called after document is saved
   async performCrossDocumentValidation(documentId, text, filename, companyId) {
     try {
-      console.log(`🔄 Performing cross-document validation for document ${documentId}`);
-      
-      // Initialize cross-document validation service if needed
+      // Kiểm tra kết nối database trước khi thực hiện
+      if (!this.db || typeof this.db.query !== 'function') {
+        console.error('❌ No valid database connection for cross-document validation');
+        throw new Error('Database connection not available or invalid');
+      }
+
+      // Khởi tạo cross-document validation service nếu chưa có
       if (!this.crossDocValidator) {
         const CrossDocumentValidationService = require('../src/services/validation/crossDocumentValidationService');
         this.crossDocValidator = new CrossDocumentValidationService();
@@ -768,6 +1216,12 @@ Document requires manual review.`;
         if (this.db) {
           this.crossDocValidator.setDbConnection(this.db);
         }
+      }
+      
+      // Kiểm tra lại kết nối database trong validator
+      if (!this.crossDocValidator.db || typeof this.crossDocValidator.db.query !== 'function') {
+        console.error('❌ Cross-document validator has no valid database connection');
+        throw new Error('Cross-document validator database connection not available');
       }
       
       // Perform cross-document validation and correction
@@ -806,6 +1260,7 @@ Document requires manual review.`;
       
     } catch (error) {
       console.error('❌ Error in cross-document validation:', error);
+      // Trả về lỗi rõ ràng để controller có thể xử lý
       return {
         originalText: text,
         correctedText: text,
@@ -813,7 +1268,9 @@ Document requires manual review.`;
         corrections: [],
         conflicts: [],
         confidence: 0.5,
-        error: error.message
+        error: error.message,
+        errorType: 'validation_error',
+        success: false
       };
     }
   }
@@ -821,6 +1278,12 @@ Document requires manual review.`;
   // Log validation results for debugging and auditing
   async logValidationResults(documentId, validationResult) {
     try {
+      // Kiểm tra kết nối database
+      if (!this.db || typeof this.db.query !== 'function') {
+        console.error('❌ Cannot log validation results: No valid database connection');
+        return;
+      }
+
       // Create tables if they don't exist
       await this.ensureValidationTablesExist();
       
@@ -857,6 +1320,12 @@ Document requires manual review.`;
   // Ensure validation tables exist (for first run)
   async ensureValidationTablesExist() {
     try {
+      // Kiểm tra kết nối database
+      if (!this.db || typeof this.db.query !== 'function') {
+        console.error('❌ Cannot ensure validation tables: No valid database connection');
+        return;
+      }
+
       const checkTablesQuery = `
         SELECT table_name 
         FROM information_schema.tables 

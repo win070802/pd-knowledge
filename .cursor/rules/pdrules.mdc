@@ -1,0 +1,19 @@
+description: "Cấu hình rules cho Cursor để lint và format code JavaScript/TypeScript"
+globs:
+  - "*.js"
+  - "*.ts"
+  - "*.tsx"
+alwaysApply: false
+rules:
+  - name: "Use single quotes for strings"
+    description: "Enforce single quotes for string literals"
+    pattern: '"([^"]*)"'
+    replacement: "'$1'"
+  - name: "Remove trailing whitespace"
+    description: "Remove unnecessary whitespace at the end of lines"
+    pattern: "\\s+$"
+    replacement: ""
+  - name: "Ensure consistent function declaration"
+    description: "Convert arrow functions to regular function declarations for consistency"
+    pattern: "const\\s+(\\w+)\\s*=\\s*\\(([^)]*)\\)\\s*=>"
+    replacement: "function $1($2)"

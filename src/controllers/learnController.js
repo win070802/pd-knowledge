@@ -87,14 +87,14 @@ async function analyzeTextAutonomously(text, aiService) {
   try {
     const autonomousPrompt = `
 Phân tích SIÊU THÔNG MINH đoạn text phức tạp sau. Bạn cần:
-1. TỰ ĐỘNG PHÁT HIỆN CÔNG TY từ text (PDH, PDI, PDE, PDHH, RH...)
+1. TỰ ĐỘNG PHÁT HIỆN CÔNG TY từ text (PDH, PDI, PDE, PDHOS, RHS...)
 2. TỰ ĐỘNG PHÂN LOẠI CATEGORY (Leadership, HR, Finance, Operations, IT, Legal, General...)
 3. TẠO NHIỀU CẶP Q&A THÔNG MINH - bao gồm CẢ SỐ LƯỢNG, DANH SÁCH, VAI TRÒ, THÔNG TIN CHI TIẾT
 
 TEXT INPUT: "${text}"
 
 YÊU CẦU PHÂN TÍCH SIÊU THÔNG MINH:
-- Detect company: Tìm mã công ty trong text (PDH, PDI, PDE, PDHH, RH...) hoặc null nếu không có
+- Detect company: Tìm mã công ty trong text (PDH, PDI, PDE, PDHOS, RHS...) hoặc null nếu không có
 - Classify category: IT=công nghệ, Leadership=lãnh đạo/CXO, HR=nhân sự, Finance=tài chính, Operations=vận hành, Legal=pháp lý, General=khác
 - Generate COMPREHENSIVE Q&A: Từ 1 text → tạo ra TẤT CẢ câu hỏi có thể:
   * Số lượng: "Team X có mấy người?" 

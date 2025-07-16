@@ -4,6 +4,7 @@ const userRepository = require('../repositories/userRepository');
 // JWT Secret (in production, use environment variable)
 const JWT_SECRET = process.env.JWT_SECRET || 'pd-knowledge-secret-key-2024';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
+const BYPASS_AUTH = process.env.NODE_ENV !== 'production';
 
 // Generate JWT token
 function generateToken(user) {
@@ -30,6 +31,19 @@ function verifyToken(token) {
 // Authentication middleware
 async function authenticate(req, res, next) {
   try {
+    // Bypass authentication in development mode if x-bypass-auth header is present
+    if (BYPASS_AUTH && req.headers['x-bypass-auth'] === 'true') {
+      console.log('⚠️ Authentication bypassed for development');
+      // Set a default admin user for testing
+      req.user = {
+        id: 999,
+        username: 'dev-admin',
+        role: 'admin',
+        is_active: true
+      };
+      return next();
+    }
+    
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -72,6 +86,12 @@ async function authenticate(req, res, next) {
 
 // Admin role check middleware
 function requireAdmin(req, res, next) {
+  // Bypass admin check in development mode if x-bypass-auth header is present
+  if (BYPASS_AUTH && req.headers['x-bypass-auth'] === 'true') {
+    console.log('⚠️ Admin check bypassed for development');
+    return next();
+  }
+  
   if (!req.user || req.user.role !== 'admin') {
     return res.status(403).json({
       success: false,
@@ -84,6 +104,19 @@ function requireAdmin(req, res, next) {
 // Optional authentication - continues even without token
 async function optionalAuth(req, res, next) {
   try {
+    // Bypass authentication in development mode if x-bypass-auth header is present
+    if (BYPASS_AUTH && req.headers['x-bypass-auth'] === 'true') {
+      console.log('⚠️ Optional authentication bypassed for development');
+      // Set a default admin user for testing
+      req.user = {
+        id: 999,
+        username: 'dev-admin',
+        role: 'admin',
+        is_active: true
+      };
+      return next();
+    }
+    
     const authHeader = req.headers.authorization;
     
     if (authHeader && authHeader.startsWith('Bearer ')) {

@@ -1,0 +1,72 @@
+{
+  "companies": {
+    "PDH": {
+      "fullName": "Phát Đạt Holdings",
+      "parentGroup": "Phát Đạt Group",
+      "chairman": "Nguyễn Văn Đạt",
+      "ceo": "Dương Hồng Cẩm",
+      "keywords": [
+        "pdh",
+        "phát đạt holdings",
+        "phát đạt group"
+      ],
+      "description": "PDH là Phát Đạt Holdings, công ty mẹ thuộc Phát Đạt Group chuyên về đầu tư và quản lý với Chủ tịch là Nguyễn Văn Đạt và CEO là Dương Hồng Cẩm."
+    },
+    "PDI": {
+      "fullName": "Phát Đạt Industrials",
+      "parentGroup": "Phát Đạt Group",
+      "chairman": "Phạm Trọng Hòa",
+      "ceo": "Vũ Văn Luyến",
+      "keywords": [
+        "pdi",
+        "phát đạt industrials",
+        "industrials"
+      ],
+      "description": "PDI là Phát Đạt Industrials, công ty thành viên thuộc Phát Đạt Group chuyên về công nghiệp với Chủ tịch là Phạm Trọng Hòa và CEO là Vũ Văn Luyến."
+    },
+    "PDE": {
+      "fullName": "Phát Đạt Energy",
+      "parentGroup": "Phát Đạt Group",
+      "chairman": "Ngô Hải Thanh",
+      "ceo": "Ngô Hải Thanh",
+      "keywords": [
+        "pde",
+        "phát đạt energy",
+        "energy"
+      ],
+      "description": "PDE là Phát Đạt Energy, công ty thuộc Phát Đạt Group chuyên đầu tư và phát triển về năng lượng điện gió và năng lượng mặt trời với Chủ tịch và CEO là Ngô Hải Thanh."
+    }
+  },
+  "keyPersons": {
+    "Nguyễn Văn Đạt": {
+      "position": "Chủ tịch Hội đồng Quản trị",
+      "company": "Phát Đạt Holdings (PDH)",
+      "group": "Phát Đạt Group"
+    },
+    "Dương Hồng Cẩm": {
+      "position": "Tổng Giám đốc",
+      "company": "Phát Đạt Holdings (PDH)",
+      "group": "Phát Đạt Group"
+    }
+  },
+  "commonQuestions": {
+    "danh sách các công ty trong tập đoàn": "🏢 **Danh sách các công ty trong Tập đoàn Phát Đạt:**\n\n**1. PDH - Phát Đạt Holdings**\n   📄 Công ty mẹ thuộc Phát Đạt Group, chuyên về đầu tư và quản lý\n   👑 Chủ tịch: Nguyễn Văn Đạt\n   💼 CEO: Dương Hồng Cẩm\n\n**2. PDI - Phát Đạt Industrials**\n   📄 Công ty thành viên thuộc Phát Đạt Group chuyên về công nghiệp\n   👑 Chủ tịch: Phạm Trọng Hòa\n   💼 CEO: Vũ Văn Luyến\n\n**3. PDE - Phát Đạt Energy**\n   📄 Công ty thuộc tập đoàn bất động sản Phát Đạt Group, chuyên đầu tư và phát triển về năng lượng điện gió và năng lượng mặt trời\n   👑 Chủ tịch: Ngô Hải Thanh\n   💼 CEO: Ngô Hải Thanh\n\n💡 *Tổng cộng: 3 công ty*",
+    "các công ty trong tập đoàn": "🏢 **Danh sách các công ty trong Tập đoàn Phát Đạt:**\n\n**1. PDH - Phát Đạt Holdings**\n   📄 Công ty mẹ thuộc Phát Đạt Group, chuyên về đầu tư và quản lý\n   👑 Chủ tịch: Nguyễn Văn Đạt\n   💼 CEO: Dương Hồng Cẩm\n\n**2. PDI - Phát Đạt Industrials**\n   📄 Công ty thành viên thuộc Phát Đạt Group chuyên về công nghiệp\n   👑 Chủ tịch: Phạm Trọng Hòa\n   💼 CEO: Vũ Văn Luyến\n\n**3. PDE - Phát Đạt Energy**\n   📄 Công ty thuộc tập đoàn bất động sản Phát Đạt Group, chuyên đầu tư và phát triển về năng lượng điện gió và năng lượng mặt trời\n   👑 Chủ tịch: Ngô Hải Thanh\n   💼 CEO: Ngô Hải Thanh\n\n💡 *Tổng cộng: 3 công ty*",
+    "có những công ty nào": "🏢 **Danh sách các công ty trong Tập đoàn Phát Đạt:**\n\n**1. PDH - Phát Đạt Holdings**\n   📄 Công ty mẹ thuộc Phát Đạt Group, chuyên về đầu tư và quản lý\n   👑 Chủ tịch: Nguyễn Văn Đạt\n   💼 CEO: Dương Hồng Cẩm\n\n**2. PDI - Phát Đạt Industrials**\n   📄 Công ty thành viên thuộc Phát Đạt Group chuyên về công nghiệp\n   👑 Chủ tịch: Phạm Trọng Hòa\n   💼 CEO: Vũ Văn Luyến\n\n**3. PDE - Phát Đạt Energy**\n   📄 Công ty thuộc tập đoàn bất động sản Phát Đạt Group, chuyên đầu tư và phát triển về năng lượng điện gió và năng lượng mặt trời\n   👑 Chủ tịch: Ngô Hải Thanh\n   💼 CEO: Ngô Hải Thanh\n\n💡 *Tổng cộng: 3 công ty*",
+    "PDH là công ty gì": "PDH là Phát Đạt Holdings, công ty mẹ thuộc Phát Đạt Group chuyên về đầu tư và quản lý với Chủ tịch là Nguyễn Văn Đạt và CEO là Dương Hồng Cẩm.",
+    "PDH là gì": "PDH là Phát Đạt Holdings, công ty mẹ thuộc Phát Đạt Group chuyên về đầu tư và quản lý với Chủ tịch là Nguyễn Văn Đạt và CEO là Dương Hồng Cẩm.",
+    "PDI là công ty gì": "PDI là Phát Đạt Industrials, công ty thành viên thuộc Phát Đạt Group chuyên về công nghiệp với Chủ tịch là Phạm Trọng Hòa và CEO là Vũ Văn Luyến.",
+    "PDI là gì": "PDI là Phát Đạt Industrials, công ty thành viên thuộc Phát Đạt Group chuyên về công nghiệp với Chủ tịch là Phạm Trọng Hòa và CEO là Vũ Văn Luyến.",
+    "PDE là công ty gì": "PDE là Phát Đạt Energy, công ty thuộc Phát Đạt Group chuyên đầu tư và phát triển về năng lượng điện gió và năng lượng mặt trời với Chủ tịch và CEO là Ngô Hải Thanh.",
+    "PDE là gì": "PDE là Phát Đạt Energy, công ty thuộc Phát Đạt Group chuyên đầu tư và phát triển về năng lượng điện gió và năng lượng mặt trời với Chủ tịch và CEO là Ngô Hải Thanh.",
+    "Phát Đạt Holdings là gì": "Phát Đạt Holdings (PDH) là công ty mẹ thuộc Phát Đạt Group chuyên về đầu tư và quản lý với Chủ tịch là Nguyễn Văn Đạt và CEO là Dương Hồng Cẩm.",
+    "Chủ tịch PDH là ai": "Chủ tịch của Phát Đạt Holdings (PDH) là Nguyễn Văn Đạt.",
+    "Tổng giám đốc PDH là ai": "CEO của Phát Đạt Holdings (PDH) là Dương Hồng Cẩm.",
+    "CEO PDH là ai": "CEO của Phát Đạt Holdings (PDH) là Dương Hồng Cẩm.",
+    "Nguyễn Văn Đạt là ai": "Nguyễn Văn Đạt là Chủ tịch của Phát Đạt Holdings (PDH), thuộc Phát Đạt Group.",
+    "Dương Hồng Cẩm là ai": "Dương Hồng Cẩm là CEO của Phát Đạt Holdings (PDH), thuộc Phát Đạt Group.",
+    "Phạm Trọng Hòa là ai": "Phạm Trọng Hòa là Chủ tịch của Phát Đạt Industrials (PDI), thuộc Phát Đạt Group.",
+    "Vũ Văn Luyến là ai": "Vũ Văn Luyến là CEO của Phát Đạt Industrials (PDI), thuộc Phát Đạt Group.",
+    "Ngô Hải Thanh là ai": "Ngô Hải Thanh là Chủ tịch và CEO của Phát Đạt Energy (PDE), thuộc Phát Đạt Group."
+  }
+}

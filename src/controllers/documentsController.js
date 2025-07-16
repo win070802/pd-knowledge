@@ -290,15 +290,30 @@ const uploadDocument = async (req, res) => {
     try {
       console.log(`🔄 Starting cross-document validation for document ${documentToSave.id}...`);
       
-      // 配置visionOCRService以使用正确的数据库连接
-      if (typeof visionOCRService.setDbConnection === 'function') {
-        visionOCRService.setDbConnection(db);
+      // Kiểm tra kết nối database trước khi thực hiện validation
+      if (!db) {
+        throw new Error('Database connection is not available');
       }
       
-      // 确保验证表存在
-      if (typeof visionOCRService.ensureValidationTablesExist === 'function') {
-        await visionOCRService.ensureValidationTablesExist();
+      // Cấu hình visionOCRService để sử dụng kết nối database chính xác
+      if (typeof visionOCRService.setDbConnection === 'function') {
+        try {
+          visionOCRService.setDbConnection(db);
+        } catch (dbSetupError) {
+          console.error('❌ Error setting up database connection:', dbSetupError);
+          throw new Error(`Database setup error: ${dbSetupError.message}`);
+        }
+      } else {
+        console.warn('⚠️ visionOCRService missing setDbConnection method');
       }
+      
+      // Thêm thông tin về trạng thái xử lý vào tài liệu
+      await db.updateDocument(documentToSave.id, {
+        processing_notes: JSON.stringify({
+          validation_started: true,
+          validation_timestamp: new Date().toISOString()
+        })
+      });
       
       const validationResult = await visionOCRService.performCrossDocumentValidation(
         documentToSave.id,
@@ -307,7 +322,29 @@ const uploadDocument = async (req, res) => {
         finalCompanyId
       );
       
-      if (validationResult.corrections && validationResult.corrections.length > 0) {
+      // Kiểm tra lỗi từ kết quả validation
+      if (validationResult.success === false || validationResult.errorType === 'validation_error') {
+        console.error(`❌ Cross-document validation failed: ${validationResult.error}`);
+        
+        // Thêm thông tin lỗi vào metadata của tài liệu
+        await db.updateDocument(documentToSave.id, {
+          processing_notes: JSON.stringify({
+            validation_error: validationResult.error,
+            validation_error_type: validationResult.errorType,
+            validation_timestamp: new Date().toISOString(),
+            requires_manual_review: true
+          })
+        });
+        
+        // Nếu là lỗi database nghiêm trọng, trả về lỗi cho client
+        if (validationResult.error && (
+            validationResult.error.includes('database') || 
+            validationResult.error.includes('connection') ||
+            validationResult.error.includes('query')
+        )) {
+          throw new Error(`Database error during validation: ${validationResult.error}`);
+        }
+      } else if (validationResult.corrections && validationResult.corrections.length > 0) {
         console.log(`✅ Applied ${validationResult.corrections.length} OCR corrections to document ${documentToSave.id}`);
       }
       
@@ -318,8 +355,29 @@ const uploadDocument = async (req, res) => {
       console.log(`📊 Cross-document validation completed with confidence: ${validationResult.confidence}`);
       
     } catch (validationError) {
-      console.error('⚠️  Cross-document validation failed, document still saved:', validationError);
-      // Don't fail the upload if validation fails - just log the error
+      console.error('⚠️ Cross-document validation error:', validationError);
+      
+      // Nếu là lỗi database nghiêm trọng, trả về lỗi cho client
+      if (validationError.message && (
+          validationError.message.includes('database') || 
+          validationError.message.includes('connection') ||
+          validationError.message.includes('query')
+      )) {
+        throw validationError; // Re-throw để dừng quá trình và trả về lỗi cho client
+      }
+      
+      // Ghi chú lỗi vào tài liệu nhưng vẫn tiếp tục quá trình
+      try {
+        await db.updateDocument(documentToSave.id, {
+          processing_notes: JSON.stringify({
+            validation_error: validationError.message,
+            validation_timestamp: new Date().toISOString(),
+            requires_manual_review: true
+          })
+        });
+      } catch (updateError) {
+        console.error('❌ Could not update document with validation error:', updateError);
+      }
     }
 
     // Clean up temp file and OCR files
@@ -381,61 +439,114 @@ const uploadDocument = async (req, res) => {
   }
 };
 
-// Merge and normalize document data (AI-powered)
+// Merge document data from old and new
 async function mergeDocumentData(oldDoc, newDoc, companyInfo) {
-  // 1. Merge content_text: lấy bản dài hơn, hoặc bản đã được AI sửa lỗi tốt hơn
-  let mergedContent = oldDoc.content_text || '';
-  if (newDoc.content_text && newDoc.content_text.length > mergedContent.length) {
-    // Sử dụng AI để sửa lỗi chính tả nếu bản mới tốt hơn
-    mergedContent = await ocrService.correctOCRText(newDoc.content_text);
-  } else if (oldDoc.content_text) {
-    mergedContent = await ocrService.correctOCRText(oldDoc.content_text);
-  }
-
-  // 2. Merge metadata: ưu tiên thông tin đúng từ companyInfo, hoặc bản nào tốt hơn
-  const oldMeta = oldDoc.metadata || {};
-  const newMeta = newDoc.metadata || {};
-  const mergedMeta = { ...oldMeta, ...newMeta };
-
-  // Merge CEO, company name, ...
-  if (companyInfo) {
-    mergedMeta.companyCode = companyInfo.code;
-    mergedMeta.companyName = companyInfo.full_name;
-    mergedMeta.ceo = companyInfo.ceo;
-    mergedMeta.chairman = companyInfo.chairman;
-    mergedMeta.keywords = companyInfo.keywords;
-  } else {
-    // Nếu không có companyInfo, lấy bản nào đúng hơn (ưu tiên bản không lỗi chính tả)
-    mergedMeta.ceo = newMeta.ceo && newMeta.ceo.length > 3 ? newMeta.ceo : oldMeta.ceo;
-    mergedMeta.companyName = newMeta.companyName || oldMeta.companyName;
-  }
-
-  // 3. Merge các trường dạng mảng: keyTerms, knowledge, learn, mainTopics, ...
-  function mergeArray(a, b) {
-    return Array.from(new Set([...(a || []), ...(b || [])])).filter(Boolean);
-  }
-  mergedMeta.keyTerms = mergeArray(oldMeta.keyTerms, newMeta.keyTerms);
-  mergedMeta.knowledge = mergeArray(oldMeta.knowledge, newMeta.knowledge);
-  mergedMeta.learn = mergeArray(oldMeta.learn, newMeta.learn);
-  mergedMeta.mainTopics = mergeArray(oldMeta.mainTopics, newMeta.mainTopics);
-
-  // 4. Lưu lịch sử các lần upload
-  mergedMeta.uploadHistory = [
-    ...(oldMeta.uploadHistory || []),
-    {
-      date: new Date().toISOString(),
-      filename: newDoc.original_name || newDoc.filename,
-      uploader: newDoc.uploader || null
+  try {
+    console.log('🔄 Merging document data...');
+    
+    // Kiểm tra nếu tài liệu thuộc về phòng ban khác nhau
+    const visionOCRService = require('../../services/vision-ocr-service');
+    
+    if (oldDoc.original_name && newDoc.metadata?.original_name && 
+        visionOCRService.filesReferToDifferentEntities(oldDoc.original_name, newDoc.metadata.original_name)) {
+      console.log('🚨 Cannot merge documents from different departments!');
+      
+      // Thêm ghi chú vào metadata để track
+      newDoc.metadata.merge_error = `Merge rejected: Documents appear to belong to different departments (${oldDoc.original_name} vs ${newDoc.metadata.original_name})`;
+      
+      // Trả về document mới mà không merge
+      return {
+        ...newDoc,
+        content_text: newDoc.content_text || oldDoc.content_text,
+        metadata: newDoc.metadata
+      };
     }
-  ];
+    
+    // If documents can be merged, proceed
+    let mergedData = {
+      content_text: oldDoc.content_text || '',
+      metadata: { ...oldDoc.metadata }
+    };
+    
+    // Merge content text if new content is not empty and different
+    if (newDoc.content_text && newDoc.content_text.trim() !== oldDoc.content_text?.trim()) {
+      // Use AI-assisted merge if available
+      try {
+        const mergedText = await visionOCRService.mergeSimilarDocuments(
+          newDoc.content_text,
+          oldDoc,
+          'Document update'
+        );
+        mergedData.content_text = mergedText;
+        console.log('✅ Content merged successfully with AI assistance');
+      } catch (mergeError) {
+        console.error('❌ AI merge failed, using new content:', mergeError);
+        // Use the longer content if AI merge fails
+        mergedData.content_text = newDoc.content_text.length > oldDoc.content_text.length ? 
+          newDoc.content_text : oldDoc.content_text;
+      }
+    }
+    
+    // Merge metadata
+    if (newDoc.metadata) {
+      // Preserve existing structure/metadata
+      mergedData.metadata = {
+        ...mergedData.metadata,
+        ...newDoc.metadata,
+        version_history: [...(mergedData.metadata?.version_history || []), {
+          timestamp: new Date().toISOString(),
+          action: 'merge',
+          original_name: newDoc.metadata.original_name,
+          uploader: newDoc.metadata.uploader
+        }]
+      };
+      
+      // Đảm bảo các mảng key metadata được merge
+      ['keyTerms', 'canAnswerQuestions', 'mainTopics'].forEach(key => {
+        if (Array.isArray(newDoc.metadata[key]) && Array.isArray(mergedData.metadata[key])) {
+          mergedData.metadata[key] = mergeArray(mergedData.metadata[key], newDoc.metadata[key]);
+        } else if (Array.isArray(newDoc.metadata[key])) {
+          mergedData.metadata[key] = newDoc.metadata[key];
+        }
+      });
+      
+      // Log merge
+      const companyName = companyInfo ? companyInfo.name : 'Unknown';
+      console.log(`✅ Merged metadata for document ${oldDoc.id} (Company: ${companyName})`);
+    }
+    
+    return mergedData;
+  } catch (error) {
+    console.error('❌ Error merging document data:', error);
+    throw error;
+  }
+}
 
-  // 5. Merge các trường khác nếu cần
-  // ...
+// Helper function to merge arrays with deduplication
+function mergeArray(a, b) {
+  if (!Array.isArray(a)) a = [];
+  if (!Array.isArray(b)) b = [];
+  
+  const uniqueMap = {};
+  
+  // Normalize string for comparison (lowercase, no diacritics)
+  const normalize = str => typeof str === 'string' 
+    ? str.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") 
+    : JSON.stringify(str);
 
-  return {
-    content_text: mergedContent,
-    metadata: mergedMeta
-  };
+  // Add all items from array a
+  a.forEach(item => {
+    const key = normalize(item);
+    uniqueMap[key] = item;
+  });
+  
+  // Add all items from array b
+  b.forEach(item => {
+    const key = normalize(item);
+    uniqueMap[key] = item;
+  });
+  
+  return Object.values(uniqueMap);
 }
 
 // Delete document

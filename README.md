@@ -7,8 +7,8 @@ Hệ thống quản lý kiến thức doanh nghiệp cho Tập đoàn Phát Đ�
 - **PDH** - Phát Đạt Holdings (công ty mẹ)
 - **PDI** - Phát Đạt Industrial  
 - **PDE** - Phát Đạt Energy
-- **PDHH** - Phát Đạt Hospitality
-- **RH** - Realty Holdings
+- **PDHOS** - Phát Đạt Hospitality
+- **RHS** - Realty Holdings
 
 ## ⚙️ Environment Variables
 

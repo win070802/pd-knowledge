@@ -394,7 +394,7 @@ class GeminiService {
 
   // Extract company code from question
   extractCompanyFromQuestion(question) {
-    const companies = ['PDH', 'PDI', 'PDE', 'PDHH', 'RH'];
+    const companies = ['PDH', 'PDI', 'PDE', 'PDHOS', 'RHS'];
     const questionUpper = question.toUpperCase();
     
     for (const company of companies) {
@@ -508,7 +508,7 @@ Câu hỏi: "${question}"
 Hãy phân tích:
 1. INTENT: Người dùng muốn gì? (list_documents, find_knowledge, hybrid_search, general_question)
 2. TARGET: Tìm gì? (documents, knowledge, both)  
-3. COMPANY: Công ty nào? (PDH, PDI, PDE, PDHH, RH, hoặc null)
+3. COMPANY: Công ty nào? (PDH, PDI, PDE, PDHOS, RHS, hoặc null)
 4. CATEGORY: Loại thông tin? (IT, HR, Finance, Legal, Operations, hoặc null)
 5. CONFIDENCE: Độ tin cậy (0-100)
 

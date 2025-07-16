@@ -25,14 +25,25 @@ npm-debug.log*
 ehthumbs.db
 Thumbs.db
 
+# Test folders and files
+testFolder/
+test-reports/
+*_OCR_Results.txt
+*_OCR_Corrected.txt
+*_Analysis.json
+department_detection_results.json
+document_classification_results.json
+ocr-test-*.log
+ocr-test-summary.json
+
 # Build outputs
 dist/
-build/uploads/
+build/
+uploads/
 temp-images/
 temp/
 
 # Sensitive files
-*.json
 service-account-key.json
 vision-key.json
 .env

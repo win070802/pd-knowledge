@@ -181,18 +181,18 @@ async function migrateDatabase() {
           keywords: ['PDE', 'Phát Đạt', 'Energy', 'Năng lượng']
         },
         {
-          code: 'PDHH',
+          code: 'PDHOS',
           full_name: 'Phát Đạt Hospitality',
           parent_group: 'Phát Đạt Group',
           description: 'Công ty khách sạn và du lịch của Tập đoàn Phát Đạt',
-          keywords: ['PDHH', 'Phát Đạt', 'Hospitality', 'Khách sạn']
+          keywords: ['PDHOS', 'Phát Đạt', 'Hospitality', 'Khách sạn']
         },
         {
-          code: 'RH',
+          code: 'RHS',
           full_name: 'Realty Holdings',
           parent_group: 'Phát Đạt Group',
           description: 'Công ty bất động sản của Tập đoàn Phát Đạt',
-          keywords: ['RH', 'Realty', 'Holdings', 'Bất động sản']
+          keywords: ['RHS', 'Realty', 'Holdings', 'Bất động sản']
         }
       ];
       

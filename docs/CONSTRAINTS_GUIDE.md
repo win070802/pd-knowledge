@@ -57,7 +57,7 @@ curl -X DELETE http://localhost:3000/api/constraints \
 
 {
   "question": "Các công ty trong tập đoàn Phát Đạt",
-  "answer": "PDH (Phát Đạt Holdings), PDI (Phát Đạt Industrial), PDE (Phát Đạt Energy), PDHH (Phát Đạt Hospitality), RH (Realty Holdings)"
+  "answer": "PDH (Phát Đạt Holdings), PDI (Phát Đạt Industrial), PDE (Phát Đạt Energy), PDHOS (Phát Đạt Hospitality), RHS (Realty Holdings)"
 }
 ```
 
@@ -96,8 +96,8 @@ Q: "Các công ty trong tập đoàn Phát Đạt"
 A: "PDH (Phát Đạt Holdings) - công ty mẹ
    PDI (Phát Đạt Industrial) - sản xuất công nghiệp
    PDE (Phát Đạt Energy) - năng lượng
-   PDHH (Phát Đạt Hospitality) - khách sạn du lịch  
-   RH (Realty Holdings) - bất động sản"
+   PDHOS (Phát Đạt Hospitality) - khách sạn du lịch  
+   RHS (Realty Holdings) - bất động sản"
 ```
 
 ### Company Information
