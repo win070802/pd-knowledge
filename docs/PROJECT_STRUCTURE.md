@@ -51,13 +51,56 @@ PD-Knowledge/
 │
 ├── 📁 src/                    # 💻 Source code
 │   ├── config/               # App configuration
+│   │   ├── database.js       # Database connection
+│   │   └── multer.js         # File upload config
+│   │
 │   ├── controllers/          # API controllers
+│   │   ├── authController.js             # Authentication API
+│   │   ├── companiesController.js        # Companies management
+│   │   ├── constraintsController.js      # Business rules
+│   │   ├── debugController.js            # Debug endpoints
+│   │   ├── documentsController.js        # Document operations
+│   │   ├── knowledgeController.js        # Knowledge API
+│   │   ├── learnController.js            # AI learning & metadata
+│   │   ├── qaController.js               # Question-answering
+│   │   └── sensitiveRulesController.js   # Content filtering
+│   │
 │   ├── middleware/           # Express middleware
+│   │   ├── auth.js           # JWT authentication
+│   │   └── security.js       # Security headers
+│   │
 │   ├── models/              # Database models
+│   │   └── schema.js        # Database schema
+│   │
 │   ├── repositories/        # Data access layer
+│   │   ├── companyRepository.js      # Company operations
+│   │   ├── documentRepository.js     # Document operations
+│   │   ├── knowledgeRepository.js    # Knowledge storage
+│   │   ├── questionRepository.js     # Q&A history
+│   │   ├── sensitiveRuleRepository.js # Content rules
+│   │   └── userRepository.js         # User management
+│   │
 │   ├── routes/              # API routes
+│   │   ├── auth.js          # Authentication routes
+│   │   ├── companies.js     # Company routes
+│   │   ├── constraints.js   # Business rules
+│   │   ├── debug.js         # Debug routes
+│   │   ├── documents.js     # Document routes
+│   │   ├── index.js         # Main router
+│   │   ├── knowledge.js     # Knowledge routes
+│   │   ├── qa.js            # Q&A routes
+│   │   └── sensitiveRules.js # Content filtering
+│   │
 │   ├── services/            # Business logic
+│   │   ├── ai/              # AI services
+│   │   ├── constraints/     # Business rules
+│   │   ├── conversation/    # Chat handling
+│   │   ├── search/          # Document search
+│   │   └── validation/      # Data validation
+│   │
 │   └── utils/               # Utility functions
+│       ├── content/         # Content processing
+│       └── pdfExtractor.js  # PDF extraction
 │
 ├── 📁 temp/                   # 🗂️ Temporary files
 ├── 📁 temp-images/           # 🖼️ Temp image processing
@@ -100,6 +143,16 @@ PD-Knowledge/
 - Training data, keys trong `data/`
 - Có thể dễ dàng backup riêng
 - Bảo mật tốt hơn cho sensitive files
+
+### 6. **Controllers với chức năng cụ thể**
+- `learnController.js` - Quản lý học tập tự động:
+  - Phân tích văn bản với Gemini AI
+  - Tự động tạo Q&A từ text đầu vào
+  - Phát hiện và cập nhật thông tin trùng lặp
+  - Lưu trữ metadata và lịch sử thay đổi
+- `qaController.js` - Xử lý câu hỏi người dùng 
+- `knowledgeController.js` - Quản lý truy xuất kiến thức
+- `documentsController.js` - Quản lý tài liệu
 
 ---
 

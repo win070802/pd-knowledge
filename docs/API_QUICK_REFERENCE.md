@@ -6,7 +6,8 @@
 |--------|----------|-------------|-------------|
 | `POST` | `/api/upload` | Upload PDF | `document` (file) |
 | `POST` | `/api/ask` | Ask question | `{"question": "..."}` |
-| `POST` | `/api/learn` | Teach AI | `{"question": "...", "answer": "..."}` |
+| `POST` | `/api/learn` | Teach AI | `{"text": "..."} or {"question": "...", "answer": "..."}` |
+| `POST` | `/api/learn/correct` | Correct knowledge | `{"text": "..."}` |
 | `GET` | `/api/search` | Search docs | `?q=search_term` |
 | `GET` | `/health` | Health check | - |
 
@@ -41,8 +42,11 @@
 
 | Method | Endpoint | Description | Usage |
 |--------|----------|-------------|-------|
-| `GET` | `/api/learn` | Get all knowledge | View learned data |
-| `POST` | `/api/learn` | Add knowledge | Teach AI new facts |
+| `GET` | `/api/learn` | Get all knowledge | View learned data with `?companyCode=PDH&category=IT` |
+| `POST` | `/api/learn` | Add knowledge from text | `{"text": "..."}` - AI auto-analyzes text |
+| `POST` | `/api/learn` | Add knowledge from Q&A | `{"question": "...", "answer": "..."}` |
+| `POST` | `/api/learn/correct` | Update/correct knowledge | `{"text": "..."}` - AI detects & updates existing entries |
+| `POST` | `/api/learn/document-company` | Map document to company | `{"documentId": 123, "companyCode": "PDH"}` |
 | `GET` | `/api/knowledge/search` | Search knowledge | `?q=term&company_id=1` |
 
 ## 📊 Quick Examples
@@ -59,13 +63,17 @@ curl -X POST http://localhost:3000/api/ask -H 'Content-Type: application/json' \
 
 ### Teach & Test
 ```bash
-# 1. Teach
+# 1. Teach new knowledge
 curl -X POST http://localhost:3000/api/learn -H 'Content-Type: application/json' \
-  -d '{"question": "Company policy", "answer": "12 days vacation per year"}'
+  -d '{"text": "Team IT PDH có 4 người: Minh, Doanh, Khôi, Đợi"}'
 
-# 2. Test
+# 2. Correct knowledge when info changes
+curl -X POST http://localhost:3000/api/learn/correct -H 'Content-Type: application/json' \
+  -d '{"text": "Team IT PDH hiện có 5 người: Minh, Doanh, Khôi, Đợi và Hùng"}'
+
+# 3. Test
 curl -X POST http://localhost:3000/api/ask -H 'Content-Type: application/json' \
-  -d '{"question": "How many vacation days?"}'
+  -d '{"question": "Team IT PDH có mấy người và gồm những ai?"}'
 ```
 
 ## 🚨 HTTP Status Codes

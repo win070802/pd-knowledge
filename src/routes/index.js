@@ -22,12 +22,11 @@ router.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Authentication routes
-router.use('/api/auth', authRoutes);
+// Main file upload (requires authentication)
+router.post('/api/upload', authenticate, upload.single('file'), documentsController.uploadDocument);
 
-// Standalone API endpoints (protected)
-router.post('/api/upload', authenticate, requireAdmin, upload.single('document'), documentsController.uploadDocument);
-router.get('/api/search', documentsController.searchDocuments);
+// Document categories (public)
+router.get('/api/categories', documentsController.getCategories);
 
 // Apply routes with proper prefixes
 router.use('/api/documents', documentsRoutes);
@@ -36,11 +35,21 @@ router.use('/api/constraints', constraintsRoutes);
 router.use('/api/companies', companiesRoutes);
 router.use('/api/sensitive-rules', sensitiveRulesRoutes);
 router.use('/api/knowledge', knowledgeRoutes);
-router.use('/api/debug', debugRoutes);
+
 
 // Learn API routes (admin only)
 router.post('/api/learn', authenticate, requireAdmin, learnController.learnFromText);
+router.post('/api/learn/correct', authenticate, requireAdmin, (req, res, next) => {
+  req.body.isCorrection = true; // Đánh dấu đây là yêu cầu sửa lỗi/cập nhật
+  next();
+}, learnController.learnFromText);
 router.post('/api/learn/document-company', authenticate, requireAdmin, learnController.learnDocumentCompany);
 router.get('/api/learn', learnController.getKnowledge);
+
+// Debug API routes (admin only)
+router.use('/api/debug', authenticate, requireAdmin, debugRoutes);
+
+// Auth routes
+router.use('/api/auth', authRoutes);
 
 module.exports = router; 

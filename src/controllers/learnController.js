@@ -10,7 +10,8 @@ const learnFromText = async (req, res) => {
       text, 
       question, 
       answer,
-      keywords 
+      keywords,
+      isCorrection = false  // Cờ đánh dấu đây là thông tin sửa lỗi/cập nhật
     } = req.body;
 
     if (!text && !(question && answer)) {
@@ -20,57 +21,111 @@ const learnFromText = async (req, res) => {
     }
 
     let knowledgeEntries = [];
+    let updatedEntries = [];
+    let historicalEntries = [];
 
     if (text) {
       // Fully autonomous AI processing - no manual input needed
       const aiService = new GeminiAiService();
       console.log(`🤖 AI analyzing text autonomously: "${text.substring(0, 50)}..."`);
       
-      const analysisResult = await analyzeTextAutonomously(text, aiService);
+      const analysisResult = await analyzeTextAutonomously(text, aiService, isCorrection);
       console.log(`🧠 AI autonomous analysis completed - generated ${analysisResult.entries.length} knowledge entries`);
       
-             // Process each entry with detected company and category
-       for (const entry of analysisResult.entries) {
-         const processedEntry = await processAutonomousKnowledgeEntry(entry, analysisResult.detectedCompany, analysisResult.detectedCategory, aiService);
-         knowledgeEntries.push(processedEntry);
-       }
+      // Process each entry with detected company and category
+      for (const entry of analysisResult.entries) {
+        const processResult = await processAutonomousKnowledgeEntry(entry, analysisResult.detectedCompany, analysisResult.detectedCategory, aiService, isCorrection);
+        
+        if (processResult.isUpdated) {
+          updatedEntries.push(processResult.entry);
+          if (processResult.historicalEntry) {
+            historicalEntries.push(processResult.historicalEntry);
+          }
+        } else {
+          knowledgeEntries.push(processResult.entry);
+        }
+      }
       
     } else {
       // Direct Q&A input (fallback for manual entry)
       const finalKeywords = keywords || extractKeywords(question + ' ' + answer);
       
-    const knowledge = await db.createKnowledge({
-        companyId: null, // Will be detected later if needed
-        question: question,
-        answer: answer,
-      keywords: finalKeywords,
-        category: 'General',
-      isActive: true
-    });
+      // Tìm kiếm kiến thức tương tự để cập nhật nếu là correction
+      if (isCorrection) {
+        const similarEntries = await findSimilarKnowledge(question);
+        
+        if (similarEntries && similarEntries.length > 0) {
+          const aiService = new GeminiAiService();
+          const historicalData = await handleHistoricalUpdate(
+            { question, answer },
+            similarEntries,
+            aiService
+          );
+          
+          // Cập nhật entry cũ
+          const updatedEntry = await db.updateKnowledge(similarEntries[0].id, {
+            question: question,
+            answer: historicalData.answer,
+            keywords: finalKeywords,
+            category: similarEntries[0].category,
+            isActive: true
+          });
+          
+          updatedEntries.push(updatedEntry);
+        } else {
+          // Nếu không tìm thấy entry tương tự, tạo mới
+          const newEntry = await db.createKnowledge({
+            companyId: null,
+            question: question,
+            answer: answer,
+            keywords: finalKeywords,
+            category: 'General',
+            isActive: true
+          });
+          
+          knowledgeEntries.push(newEntry);
+        }
+      } else {
+        // Không phải correction, tạo mới bình thường
+        const knowledge = await db.createKnowledge({
+          companyId: null,
+          question: question,
+          answer: answer,
+          keywords: finalKeywords,
+          category: 'General',
+          isActive: true
+        });
 
-      knowledgeEntries.push(knowledge);
+        knowledgeEntries.push(knowledge);
+      }
     }
 
-    console.log(`📚 AI autonomously processed and saved ${knowledgeEntries.length} knowledge entries`);
+    const totalEntries = knowledgeEntries.length + updatedEntries.length;
+    console.log(`📚 AI autonomously processed and saved ${totalEntries} knowledge entries (${updatedEntries.length} updated, ${knowledgeEntries.length} new)`);
 
     res.status(201).json({
       success: true,
-      message: `AI successfully analyzed and added ${knowledgeEntries.length} knowledge entries autonomously`,
+      message: isCorrection 
+        ? `AI successfully corrected ${updatedEntries.length} and added ${knowledgeEntries.length} knowledge entries` 
+        : `AI successfully analyzed and added ${totalEntries} knowledge entries autonomously`,
       analysis: {
-        detectedCompany: knowledgeEntries[0]?.company_detected || 'Not detected',
-        detectedCategory: knowledgeEntries[0]?.category || 'General',
-        entriesGenerated: knowledgeEntries.length,
-        hasHistoricalUpdates: knowledgeEntries.some(k => k.isHistoricalUpdate)
+        detectedCompany: (knowledgeEntries[0] || updatedEntries[0])?.company_detected || 'Not detected',
+        detectedCategory: (knowledgeEntries[0] || updatedEntries[0])?.category || 'General',
+        entriesGenerated: totalEntries,
+        entriesUpdated: updatedEntries.length,
+        hasHistoricalUpdates: updatedEntries.length > 0
       },
-      knowledge: knowledgeEntries.map(k => ({
+      knowledge: [...knowledgeEntries, ...updatedEntries].map(k => ({
         id: k.id,
         company: k.company_detected || null,
         question: k.question,
         answer: k.answer.length > 100 ? k.answer.substring(0, 100) + '...' : k.answer,
         category: k.category,
         keywordsCount: k.keywords?.length || 0,
-        isHistoricalUpdate: k.isHistoricalUpdate || false
-      }))
+        isHistoricalUpdate: k.isHistoricalUpdate || false,
+        isUpdated: updatedEntries.some(u => u.id === k.id)
+      })),
+      historicalEntries: historicalEntries.length > 0 ? historicalEntries : undefined
     });
 
   } catch (error) {
@@ -83,13 +138,14 @@ const learnFromText = async (req, res) => {
 };
 
 // Fully autonomous AI text analysis - detects company, category, and generates Q&A
-async function analyzeTextAutonomously(text, aiService) {
+async function analyzeTextAutonomously(text, aiService, isCorrection = false) {
   try {
     const autonomousPrompt = `
 Phân tích SIÊU THÔNG MINH đoạn text phức tạp sau. Bạn cần:
 1. TỰ ĐỘNG PHÁT HIỆN CÔNG TY từ text (PDH, PDI, PDE, PDHOS, RHS...)
 2. TỰ ĐỘNG PHÂN LOẠI CATEGORY (Leadership, HR, Finance, Operations, IT, Legal, General...)
 3. TẠO NHIỀU CẶP Q&A THÔNG MINH - bao gồm CẢ SỐ LƯỢNG, DANH SÁCH, VAI TRÒ, THÔNG TIN CHI TIẾT
+${isCorrection ? '4. PHÁT HIỆN NẾU ĐÂY LÀ THÔNG TIN CẬP NHẬT/SỬA LỖI - đánh dấu update_type: "correction" hoặc "historical_update"' : ''}
 
 TEXT INPUT: "${text}"
 
@@ -102,6 +158,11 @@ YÊU CẦU PHÂN TÍCH SIÊU THÔNG MINH:
   * Vai trò cụ thể: "Ai là CIO/CEO/trưởng phòng?"
   * Thông tin chi tiết: "Nguyễn Văn A làm gì?"
   * So sánh: "Ai quản lý hạ tầng?"
+${isCorrection ? `
+- Detect correction type:
+  * "correction": Sửa lỗi hoàn toàn mới (thông tin trước đây sai)
+  * "historical_update": Cập nhật theo thời gian (thông tin cũ đúng vào thời điểm đó, nhưng giờ đã thay đổi)
+  * "new_info": Thông tin hoàn toàn mới, không liên quan đến dữ liệu cũ` : ''}
 
 VÍ DỤ PHÂN TÍCH SIÊU THÔNG MINH:
 Text: "ban công nghệ thông tin pdh gồm có 4 người là lê nguyễn hoàng minh (cio), nguyễn đức doanh (trưởng bộ phận hạ tầng), trần minh khôi (nhân viên it), nguyễn quang đợi (chuyên viên phần mềm)"
@@ -127,21 +188,44 @@ FORMAT TRẢ LỜI:
       "answer": "Team IT của PDH có 4 người.",
       "type": "count_query",
       "keywords": ["team", "IT", "PDH", "4 người", "số lượng"],
-      "relatedQuestions": ["Ban công nghệ thông tin PDH có mấy thành viên?"]
+      "relatedQuestions": ["Ban công nghệ thông tin PDH có mấy thành viên?"],
+      ${isCorrection ? '"update_type": "new_info",' : ''}
+      "metadata": {
+        "entities": ["Team IT", "PDH"],
+        "roles": [],
+        "numerical_values": [{"type": "count", "value": 4, "unit": "người"}]
+      }
     },
     {
       "question": "Team IT của PDH có những ai?",
       "answer": "Team IT của PDH gồm có Lê Nguyễn Hoàng Minh (CIO), Nguyễn Đức Doanh (trưởng bộ phận hạ tầng và bảo mật), Trần Minh Khôi (nhân viên công nghệ thông tin), Nguyễn Quang Đợi (chuyên viên cao cấp phát triển phần mềm).",
       "type": "list_query",
       "keywords": ["team", "IT", "PDH", "danh sách", "thành viên"],
-      "relatedQuestions": ["Danh sách nhân viên IT PDH?"]
+      "relatedQuestions": ["Danh sách nhân viên IT PDH?"],
+      ${isCorrection ? '"update_type": "new_info",' : ''}
+      "metadata": {
+        "entities": ["Team IT", "PDH"],
+        "people": ["Lê Nguyễn Hoàng Minh", "Nguyễn Đức Doanh", "Trần Minh Khôi", "Nguyễn Quang Đợi"],
+        "roles": [
+          {"person": "Lê Nguyễn Hoàng Minh", "role": "CIO"},
+          {"person": "Nguyễn Đức Doanh", "role": "trưởng bộ phận hạ tầng và bảo mật"},
+          {"person": "Trần Minh Khôi", "role": "nhân viên công nghệ thông tin"},
+          {"person": "Nguyễn Quang Đợi", "role": "chuyên viên cao cấp phát triển phần mềm"}
+        ]
+      }
     },
     {
       "question": "Ai là CIO của PDH?",
       "answer": "CIO của PDH là Lê Nguyễn Hoàng Minh.",
       "type": "role_query",
       "keywords": ["CIO", "PDH", "Lê Nguyễn Hoàng Minh"],
-      "relatedQuestions": ["Lê Nguyễn Hoàng Minh giữ chức vụ gì?"]
+      "relatedQuestions": ["Lê Nguyễn Hoàng Minh giữ chức vụ gì?"],
+      ${isCorrection ? '"update_type": "new_info",' : ''}
+      "metadata": {
+        "entities": ["PDH"],
+        "people": ["Lê Nguyễn Hoàng Minh"],
+        "roles": [{"person": "Lê Nguyễn Hoàng Minh", "role": "CIO", "organization": "PDH"}]
+      }
     }
   ]
 }
@@ -196,12 +280,17 @@ function createFallbackEntry(text) {
     answer: text,
     type: 'general',
     keywords: extractKeywords(text),
-    relatedQuestions: []
+    relatedQuestions: [],
+    metadata: {
+      entities: [],
+      people: [],
+      roles: []
+    }
   };
 }
 
 // Process autonomous knowledge entry with detected company and category
-async function processAutonomousKnowledgeEntry(entry, detectedCompanyCode, detectedCategory, aiService) {
+async function processAutonomousKnowledgeEntry(entry, detectedCompanyCode, detectedCategory, aiService, isCorrection = false) {
   try {
     // Resolve detected company from database
     let company = null;
@@ -214,9 +303,7 @@ async function processAutonomousKnowledgeEntry(entry, detectedCompanyCode, detec
       }
     }
 
-    // Check if this is an update to existing knowledge
-    const existingKnowledge = await findSimilarKnowledge(entry.question, company?.id);
-    
+    // Prepare basic entry data
     let finalEntry = {
       companyId: company ? company.id : null,
       question: entry.question,
@@ -226,33 +313,86 @@ async function processAutonomousKnowledgeEntry(entry, detectedCompanyCode, detec
       isActive: true
     };
 
-    // Temporarily disable historical update to focus on new knowledge creation
-    if (existingKnowledge && existingKnowledge.length > 0) {
-      console.log(`ℹ️ Found ${existingKnowledge.length} similar knowledge entries, but creating new entry for now`);
-      // For now, just create new entries without updating old ones
-      // TODO: Re-enable historical tracking after fixing database issues
-    }
+    // Extract metadata if available
+    const metadata = entry.metadata || {
+      entities: [],
+      people: [],
+      roles: []
+    };
 
-    // Create new knowledge entry
-    const savedKnowledge = await db.createKnowledge(finalEntry);
-    savedKnowledge.isHistoricalUpdate = finalEntry.isHistoricalUpdate;
-    savedKnowledge.company_detected = detectedCompanyCode; // Store detected company for response
-    
-    // Create related questions as separate entries
-    if (entry.relatedQuestions && entry.relatedQuestions.length > 0) {
-      for (const relatedQ of entry.relatedQuestions) {
-        await db.createKnowledge({
-          companyId: company ? company.id : null,
-          question: relatedQ,
-          answer: entry.answer,
-          keywords: finalEntry.keywords,
-          category: detectedCategory || 'General',
-          isActive: true
-        });
+    // Check if this is an update to existing knowledge
+    const similarEntries = await findSimilarKnowledge(entry.question, company?.id);
+    let result = { isUpdated: false, entry: null, historicalEntry: null };
+
+    // Determine if this entry is a correction/update based on entry.update_type or isCorrection flag
+    const needsHistoricalUpdate = isCorrection || 
+                                 (entry.update_type === 'correction' || entry.update_type === 'historical_update');
+
+    if (similarEntries && similarEntries.length > 0 && needsHistoricalUpdate) {
+      console.log(`🔄 Found ${similarEntries.length} similar entries that need to be updated`);
+      
+      // Get historical data with AI help
+      const historicalData = await handleHistoricalUpdate(
+        { question: entry.question, answer: entry.answer },
+        similarEntries,
+        aiService
+      );
+      
+      // Update the existing entry with historical context
+      const updatedEntry = await db.updateKnowledge(similarEntries[0].id, {
+        question: entry.question,
+        answer: historicalData.answer,
+        keywords: finalEntry.keywords,
+        category: finalEntry.category,
+        isActive: true
+      });
+      
+      updatedEntry.company_detected = detectedCompanyCode;
+      updatedEntry.isHistoricalUpdate = true;
+      updatedEntry.metadata = {
+        ...similarEntries[0].metadata,
+        ...metadata,
+        updatedAt: new Date().toISOString(),
+        previousValue: similarEntries[0].answer
+      };
+      
+      result = { 
+        isUpdated: true, 
+        entry: updatedEntry, 
+        historicalEntry: {
+          id: similarEntries[0].id,
+          previousAnswer: similarEntries[0].answer,
+          newAnswer: updatedEntry.answer
+        } 
+      };
+      
+    } else {
+      // Create new knowledge entry
+      finalEntry.metadata = metadata;
+      
+      const savedKnowledge = await db.createKnowledge(finalEntry);
+      savedKnowledge.company_detected = detectedCompanyCode;
+      
+      result = { isUpdated: false, entry: savedKnowledge };
+      
+      // Create related questions as separate entries
+      if (entry.relatedQuestions && entry.relatedQuestions.length > 0) {
+        console.log(`📝 Creating ${entry.relatedQuestions.length} related question entries`);
+        for (const relatedQ of entry.relatedQuestions) {
+          await db.createKnowledge({
+            companyId: company ? company.id : null,
+            question: relatedQ,
+            answer: entry.answer,
+            keywords: finalEntry.keywords,
+            category: detectedCategory || 'General',
+            metadata: metadata,
+            isActive: true
+          });
+        }
       }
     }
     
-    return savedKnowledge;
+    return result;
     
   } catch (error) {
     console.error('❌ Error processing autonomous knowledge entry:', error);
@@ -261,22 +401,50 @@ async function processAutonomousKnowledgeEntry(entry, detectedCompanyCode, detec
 }
 
 // Find similar existing knowledge
-async function findSimilarKnowledge(question, companyId) {
+async function findSimilarKnowledge(question, companyId = null) {
   try {
     const client = await pool.connect();
     
     try {
+      // Tìm kiếm dựa trên nội dung câu hỏi
+      const questionWords = question.split(' ')
+        .filter(word => word.length > 3)
+        .slice(0, 5);
+      
+      // Tạo pattern tìm kiếm dựa trên các từ khóa quan trọng
+      let patterns = questionWords.map(word => `%${word}%`);
+      
+      // Câu truy vấn cơ bản
       let query = `
         SELECT * FROM knowledge_base 
         WHERE is_active = true
-        AND question ILIKE $1
-      `;
-      const params = [`%${question.split(' ').slice(-3).join(' ')}%`]; // Search for key words
+        AND (`;
       
-      if (companyId) {
-        query += ` AND company_id = $2`;
-        params.push(companyId);
+      // Thêm điều kiện tìm kiếm cho mỗi từ khóa
+      const conditions = [];
+      const params = [];
+      let paramIndex = 1;
+      
+      for (const pattern of patterns) {
+        conditions.push(`question ILIKE $${paramIndex}`);
+        params.push(pattern);
+        paramIndex++;
       }
+      
+      query += conditions.join(' OR ');
+      query += ')';
+      
+      // Thêm điều kiện công ty nếu có
+      if (companyId) {
+        query += ` AND (company_id = $${paramIndex} OR company_id IS NULL)`;
+        params.push(companyId);
+        paramIndex++;
+      }
+      
+      query += ` ORDER BY created_at DESC LIMIT 5`;
+      
+      console.log('🔍 Executing similar knowledge query:', query);
+      console.log('With params:', params);
       
       const result = await client.query(query, params);
       return result.rows;
@@ -301,12 +469,25 @@ ${existingEntries.map(e => `- ${e.answer}`).join('\n')}
 THÔNG TIN MỚI: ${newEntry.answer}
 
 YÊU CẦU:
-1. Tạo câu trả lời bao gồm cả thông tin hiện tại và lịch sử
-2. Sử dụng format: "Hiện tại là X. Trước đó là Y."
-3. Thông tin mới được ưu tiên (là thông tin hiện tại)
-4. Thông tin cũ thành lịch sử
+1. Phân tích xem thông tin mới có MÂU THUẪN với thông tin cũ hay chỉ là BỔ SUNG
+2. Tạo câu trả lời tích hợp cả thông tin cũ và mới một cách hợp lý:
+   * Nếu là MÂU THUẪN (ví dụ: người giữ chức vụ thay đổi): 
+     "Hiện tại [thông tin mới]. Trước đó là [thông tin cũ]."
+   * Nếu là BỔ SUNG (thông tin mới chi tiết hơn):
+     Kết hợp cả thông tin cũ và mới thành câu trả lời đầy đủ nhất
 
-Ví dụ: "CIO của PDH hiện tại là ông Lê Nguyễn Hoàng Minh. Trước đó là ông Nguyễn Văn A."
+3. Đảm bảo thông tin mới được ưu tiên (là thông tin hiện tại)
+4. Thông tin cũ được giữ lại làm tham khảo lịch sử khi cần
+
+Ví dụ 1 (MÂU THUẪN):
+- CŨ: "CIO của PDH là ông Nguyễn Văn A"
+- MỚI: "Ông Lê Nguyễn Hoàng Minh là CIO của PDH"
+→ "CIO của PDH hiện tại là ông Lê Nguyễn Hoàng Minh. Trước đó là ông Nguyễn Văn A."
+
+Ví dụ 2 (BỔ SUNG):
+- CŨ: "Team IT có 4 người"
+- MỚI: "Team IT gồm Minh, Doanh, Khôi và Đợi"
+→ "Team IT có 4 người gồm Minh, Doanh, Khôi và Đợi."
 
 CHỈ trả về câu trả lời, không thêm text khác:`;
 
@@ -497,6 +678,7 @@ const getKnowledge = async (req, res) => {
         answer: k.answer.substring(0, 200) + (k.answer.length > 200 ? '...' : ''),
         category: k.category,
         keywords: k.keywords,
+        metadata: k.metadata || {},
         createdAt: k.created_at
       }))
     });

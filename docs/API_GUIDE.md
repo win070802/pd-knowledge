@@ -71,7 +71,100 @@ GET /api/history?limit=10
 
 ## 📚 Learn API
 
-### Teach AI
+### Thêm kiến thức mới từ văn bản
+```bash
+POST /api/learn
+Content-Type: application/json
+
+# Example
+curl -X POST http://localhost:3000/api/learn \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Ban công nghệ thông tin PDH gồm có 4 người là Lê Nguyễn Hoàng Minh (CIO), Nguyễn Đức Doanh (quản lý hạ tầng), Trần Minh Khôi (IT), Nguyễn Quang Đợi (phần mềm)"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "AI successfully analyzed and added 8 knowledge entries autonomously",
+  "analysis": {
+    "detectedCompany": "PDH",
+    "detectedCategory": "IT",
+    "entriesGenerated": 8,
+    "entriesUpdated": 0,
+    "hasHistoricalUpdates": false
+  },
+  "knowledge": [
+    {
+      "id": 42,
+      "company": "PDH",
+      "question": "Ban công nghệ thông tin PDH có mấy người?",
+      "answer": "Ban công nghệ thông tin PDH có 4 người.",
+      "category": "IT",
+      "keywordsCount": 6
+    },
+    {
+      "id": 43,
+      "company": "PDH",
+      "question": "Ai là CIO của PDH?",
+      "answer": "CIO của PDH là Lê Nguyễn Hoàng Minh.",
+      "category": "IT",
+      "keywordsCount": 6
+    }
+  ]
+}
+```
+
+### Sửa/Cập nhật kiến thức từ văn bản
+```bash
+POST /api/learn/correct
+Content-Type: application/json
+
+# Example
+curl -X POST http://localhost:3000/api/learn/correct \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "text": "Ban công nghệ thông tin PDH hiện có 5 người, gồm Lê Nguyễn Hoàng Minh (CIO), Nguyễn Đức Doanh, Trần Minh Khôi, Nguyễn Quang Đợi và Nguyễn Văn Hùng (mới vào ngày 15/7/2024)"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "AI successfully corrected 2 and added 5 knowledge entries",
+  "analysis": {
+    "detectedCompany": "PDH",
+    "detectedCategory": "IT",
+    "entriesGenerated": 7,
+    "entriesUpdated": 2,
+    "hasHistoricalUpdates": true
+  },
+  "knowledge": [
+    {
+      "id": 42,
+      "company": "PDH",
+      "question": "Ban công nghệ thông tin PDH có mấy người?",
+      "answer": "Ban công nghệ thông tin PDH hiện có 5 người. Trước đây có 4 người.",
+      "category": "IT",
+      "keywordsCount": 6,
+      "isHistoricalUpdate": true,
+      "isUpdated": true
+    }
+  ],
+  "historicalEntries": [
+    {
+      "id": 42,
+      "previousAnswer": "Ban công nghệ thông tin PDH có 4 người.",
+      "newAnswer": "Ban công nghệ thông tin PDH hiện có 5 người. Trước đây có 4 người."
+    }
+  ]
+}
+```
+
+### Thêm kiến thức trực tiếp từ Q&A
 ```bash
 POST /api/learn
 Content-Type: application/json
@@ -85,19 +178,43 @@ curl -X POST http://localhost:3000/api/learn \
   }'
 ```
 
-### Get Knowledge
+### Ánh xạ tài liệu vào công ty
 ```bash
-GET /api/learn
+POST /api/learn/document-company
+Content-Type: application/json
+
+# Example
+curl -X POST http://localhost:3000/api/learn/document-company \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "documentId": 45,
+    "companyCode": "PDH"
+  }'
+```
+
+### Lấy kiến thức đã học
+```bash
+GET /api/learn?companyCode=PDH&category=IT
 
 # Response
 {
   "success": true,
+  "count": 12,
   "knowledge": [
     {
-      "id": 1,
-      "question": "Chính sách nghỉ phép PDH",
-      "answer": "PDH có 12 buổi nghỉ phép...",
-      "company": "PDH"
+      "id": 42,
+      "company": "PDH",
+      "question": "Ban công nghệ thông tin PDH có mấy người?",
+      "answer": "Ban công nghệ thông tin PDH hiện có 5 người. Trước đây có 4 người.",
+      "category": "IT",
+      "keywords": ["ban", "công nghệ", "thông tin", "PDH", "người"],
+      "metadata": {
+        "entities": ["Ban công nghệ thông tin", "PDH"],
+        "roles": [],
+        "numerical_values": [{"type": "count", "value": 5, "unit": "người"}],
+        "updatedAt": "2024-07-15T10:30:00.000Z",
+        "previousValue": "Ban công nghệ thông tin PDH có 4 người."
+      }
     }
   ]
 }
