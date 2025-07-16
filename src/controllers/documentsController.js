@@ -640,11 +640,67 @@ const searchDocuments = async (req, res) => {
   }
 };
 
+// Get document categories
+const getCategories = async (req, res) => {
+  try {
+    // Lấy danh sách categories từ database
+    const query = `
+      SELECT DISTINCT category 
+      FROM documents 
+      WHERE category IS NOT NULL 
+      ORDER BY category
+    `;
+    
+    const result = await db.query(query);
+    const categories = result.rows.map(row => row.category);
+    
+    res.json({ 
+      success: true, 
+      categories 
+    });
+  } catch (error) {
+    console.error('Error fetching document categories:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Thêm hàm getDocumentsByCompany ở cuối file trước module.exports
+const getDocumentsByCompany = async (req, res) => {
+  try {
+    const { companyCode } = req.params;
+    
+    if (!companyCode) {
+      return res.status(400).json({ success: false, error: 'Company code is required' });
+    }
+    
+    // Lấy thông tin công ty
+    const company = await db.getCompanyByCode(companyCode);
+    if (!company) {
+      return res.status(404).json({ success: false, error: 'Company not found' });
+    }
+    
+    // Lấy danh sách tài liệu theo công ty
+    const documents = await db.getDocumentsByCompany(company.id);
+    
+    res.json({ 
+      success: true, 
+      documents,
+      company
+    });
+  } catch (error) {
+    console.error('Error fetching documents by company:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Cập nhật module.exports để thêm hàm mới
 module.exports = {
   getDocuments,
   getDocumentById,
   uploadDocument,
   deleteDocument,
   reprocessDocument,
-  searchDocuments
+  searchDocuments,
+  getCategories,
+  getDocumentsByCompany
 }; 

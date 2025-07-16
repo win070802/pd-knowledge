@@ -7,6 +7,9 @@ const { authenticate, requireAdmin } = require('../middleware/auth');
 // Get all documents (public)
 router.get('/', documentsController.getDocuments);
 
+// Get documents by company (public) - phải đặt trước route có :id
+router.get('/company/:companyCode', documentsController.getDocumentsByCompany);
+
 // Get document by ID (public)
 router.get('/:id', documentsController.getDocumentById);
 

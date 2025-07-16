@@ -93,7 +93,7 @@ class DocumentRepository {
     }
   }
 
-  async searchDocuments(searchTerm) {
+  async searchDocuments(searchTerm, filters = {}) {
     const client = await pool.connect();
     try {
       // Extract keywords from search term
@@ -104,8 +104,44 @@ class DocumentRepository {
         .slice(0, 10); // Limit to 10 keywords
 
       console.log(`📄 Searching with keywords:`, keywords);
+      console.log(`📄 Applied filters:`, filters);
 
-      if (keywords.length === 0) {
+      // Prepare parameters
+      const params = [`%${searchTerm}%`];
+      
+      // Add keyword parameters
+      for (let i = 0; i < keywords.length; i++) {
+        params.push(`%${keywords[i]}%`);
+      }
+
+      // Add filter conditions
+      let filterConditions = [];
+      
+      // Filter by company ID
+      if (filters.companyId) {
+        filterConditions.push(`company_id = $${params.length + 1}`);
+        params.push(filters.companyId);
+      }
+      
+      // Filter by company code
+      if (filters.companyCode) {
+        filterConditions.push(`company_id = (SELECT id FROM companies WHERE code = $${params.length + 1})`);
+        params.push(filters.companyCode);
+      }
+      
+      // Filter by category/topic
+      if (filters.category) {
+        filterConditions.push(`category ILIKE $${params.length + 1}`);
+        params.push(`%${filters.category}%`);
+      }
+      
+      // Filter by department (metadata field)
+      if (filters.department) {
+        filterConditions.push(`(metadata->>'department' ILIKE $${params.length + 1} OR metadata->>'departments' ILIKE $${params.length + 1})`);
+        params.push(`%${filters.department}%`);
+      }
+
+      if (keywords.length === 0 && !filterConditions.length) {
         // Fallback to simple search
       const result = await client.query(
         'SELECT * FROM documents WHERE content_text ILIKE $1 ORDER BY upload_date DESC',
@@ -116,45 +152,49 @@ class DocumentRepository {
 
       // Build flexible search query
       let query = `
-        SELECT *, 
+        SELECT d.*, c.code as company_code, c.full_name as company_name, 
         (
           CASE 
-            WHEN original_name ILIKE $1 THEN 100
+            WHEN d.original_name ILIKE $1 THEN 100
             ELSE 0
           END +
           CASE 
-            WHEN category ILIKE $1 THEN 80
+            WHEN d.category ILIKE $1 THEN 80
             ELSE 0
           END
       `;
       
-      const params = [`%${searchTerm}%`];
-      
       // Add keyword scoring
       for (let i = 0; i < keywords.length; i++) {
-        const paramIndex = params.length + 1;
-        query += ` + CASE WHEN content_text ILIKE $${paramIndex} THEN 10 ELSE 0 END`;
-        query += ` + CASE WHEN original_name ILIKE $${paramIndex} THEN 20 ELSE 0 END`;
-        params.push(`%${keywords[i]}%`);
+        const paramIndex = i + 2; // Start from param $2
+        query += ` + CASE WHEN d.content_text ILIKE $${paramIndex} THEN 10 ELSE 0 END`;
+        query += ` + CASE WHEN d.original_name ILIKE $${paramIndex} THEN 20 ELSE 0 END`;
       }
       
       query += `
         ) as relevance_score
-        FROM documents 
+        FROM documents d
+        JOIN companies c ON d.company_id = c.id
         WHERE (
-          content_text ILIKE $1 
-          OR original_name ILIKE $1 
-          OR category ILIKE $1
+          d.content_text ILIKE $1 
+          OR d.original_name ILIKE $1 
+          OR d.category ILIKE $1
       `;
       
       // Add OR conditions for keywords
       for (let i = 0; i < keywords.length; i++) {
-        const paramIndex = 2 + i; // Start from param $2
-        query += ` OR content_text ILIKE $${paramIndex} OR original_name ILIKE $${paramIndex}`;
+        const paramIndex = i + 2; // Start from param $2
+        query += ` OR d.content_text ILIKE $${paramIndex} OR d.original_name ILIKE $${paramIndex}`;
+      }
+      
+      query += `)`;
+      
+      // Add filter conditions if any
+      if (filterConditions.length > 0) {
+        query += ` AND ${filterConditions.join(' AND ')}`;
       }
       
       query += `
-        )
         ORDER BY relevance_score DESC, upload_date DESC
         LIMIT 20
       `;

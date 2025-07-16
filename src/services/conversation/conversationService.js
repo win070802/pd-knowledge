@@ -252,6 +252,67 @@ class ConversationService {
 
       const questionLower = question.toLowerCase();
       
+      // Kiểm tra các từ khóa chỉ ra rằng đây là truy vấn danh sách, không phải tham chiếu
+      const listQueryKeywords = ['danh sách', 'liệt kê', 'có những', 'có mấy', 'có bao nhiêu'];
+      const isListQuery = listQueryKeywords.some(keyword => questionLower.includes(keyword));
+      
+      // Kiểm tra nếu câu hỏi có chứa tên tài liệu cụ thể
+      const hasSpecificDocumentName = questionLower.includes('.pdf') || questionLower.includes('.doc') || 
+                                     questionLower.includes('.xlsx') || questionLower.includes('.ppt');
+      
+      // Lấy danh sách công ty từ database
+      const companiesQuery = await pool.query('SELECT code, full_name FROM companies');
+      const companies = companiesQuery.rows || [];
+      
+      // Tạo danh sách từ khóa công ty từ database
+      const companyKeywords = [];
+      companies.forEach(company => {
+        if (company.code) companyKeywords.push(company.code.toLowerCase());
+        if (company.full_name) {
+          // Thêm cả tên đầy đủ và các phần của tên
+          companyKeywords.push(company.full_name.toLowerCase());
+          const nameParts = company.full_name.toLowerCase().split(' ');
+          nameParts.forEach(part => {
+            if (part.length > 2) companyKeywords.push(part);
+          });
+        }
+      });
+      
+      // Thêm một số từ khóa mặc định cho các công ty phổ biến
+      const defaultCompanyKeywords = ['phát đạt', 'phat dat', 'holding', 'invest'];
+      defaultCompanyKeywords.forEach(keyword => {
+        if (!companyKeywords.includes(keyword)) {
+          companyKeywords.push(keyword);
+        }
+      });
+      
+      // Kiểm tra xem câu hỏi có chứa từ khóa công ty không
+      const hasCompanyKeyword = companyKeywords.some(keyword => questionLower.includes(keyword));
+      
+      // Nếu là truy vấn danh sách kết hợp với tên công ty hoặc phòng ban, KHÔNG coi là tham chiếu
+      if (isListQuery && hasCompanyKeyword) {
+        return { resolvedQuestion: question, hasReference: false };
+      }
+      
+      // Nếu câu hỏi chứa tên tài liệu cụ thể, KHÔNG coi là tham chiếu
+      if (hasSpecificDocumentName) {
+        return { resolvedQuestion: question, hasReference: false };
+      }
+      
+      // Kiểm tra nếu câu hỏi là câu hỏi chung không liên quan đến tài liệu
+      const generalQuestionPatterns = [
+        'việt nam', 'thế giới', 'là gì', 'định nghĩa', 'khái niệm',
+        'bao nhiêu người', 'dân số', 'diện tích', 'thủ đô',
+        'tổng thống', 'tại sao', 'vì sao', 'lý do', 'nguyên nhân'
+      ];
+      
+      const isGeneralQuestion = generalQuestionPatterns.some(pattern => questionLower.includes(pattern));
+      
+      // Nếu là câu hỏi chung không liên quan đến tài liệu, KHÔNG coi là tham chiếu
+      if (isGeneralQuestion && !hasCompanyKeyword) {
+        return { resolvedQuestion: question, hasReference: false };
+      }
+      
       // Phân tích tài liệu từ lịch sử cuộc trò chuyện
       let lastDocumentsInHistory = [];
       let lastMentionedDocName = '';
@@ -384,7 +445,8 @@ class ConversationService {
       const nonReferencePatterns = [
         'có bao nhiêu', 'bao nhiêu', 'có mấy', 'mấy người', 
         'có ai', 'ai là', 'là ai', 'ở đâu', 'khi nào',
-        'tại sao', 'vì sao', 'có phải', 'đúng không'
+        'tại sao', 'vì sao', 'có phải', 'đúng không',
+        'danh sách', 'liệt kê'
       ];
       
       // Nếu câu hỏi chứa các mẫu không tham chiếu và không có tham chiếu rõ ràng

@@ -30,12 +30,13 @@ router.get('/api/categories', documentsController.getCategories);
 
 // Apply routes with proper prefixes
 router.use('/api/documents', documentsRoutes);
-router.use('/api', qaRoutes);
+router.use('/api/qa', qaRoutes);
 router.use('/api/constraints', constraintsRoutes);
 router.use('/api/companies', companiesRoutes);
 router.use('/api/sensitive-rules', sensitiveRulesRoutes);
 router.use('/api/knowledge', knowledgeRoutes);
-
+router.use('/api/debug', authenticate, requireAdmin, debugRoutes);
+router.use('/api/auth', authRoutes);
 
 // Learn API routes (admin only)
 router.post('/api/learn', authenticate, requireAdmin, learnController.learnFromText);
@@ -45,11 +46,5 @@ router.post('/api/learn/correct', authenticate, requireAdmin, (req, res, next) =
 }, learnController.learnFromText);
 router.post('/api/learn/document-company', authenticate, requireAdmin, learnController.learnDocumentCompany);
 router.get('/api/learn', learnController.getKnowledge);
-
-// Debug API routes (admin only)
-router.use('/api/debug', authenticate, requireAdmin, debugRoutes);
-
-// Auth routes
-router.use('/api/auth', authRoutes);
 
 module.exports = router; 

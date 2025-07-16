@@ -10,7 +10,9 @@
     "migrate": "node migrate-production.js",
     "test": "jest",
     "test:unit": "jest test/unit",
-    "test:qa": "jest test/unit/qaController.test.js"
+    "test:qa": "jest test/unit/qaController.test.js",
+    "test:api": "node scripts/run-tests.js",
+    "test:integration": "mocha test/integration-test.js"
   },
   "keywords": [
     "pdf",
@@ -43,8 +45,11 @@
     "uuid": "^11.1.0"
   },
   "devDependencies": {
+    "chai": "^5.2.1",
     "jest": "^30.0.4",
-    "nodemon": "^3.0.2"
+    "mocha": "^10.8.2",
+    "nodemon": "^3.0.2",
+    "supertest": "^6.3.4"
   },
   "engines": {
     "node": ">=16.0.0"
