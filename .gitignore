@@ -35,6 +35,10 @@ department_detection_results.json
 document_classification_results.json
 ocr-test-*.log
 ocr-test-summary.json
+coverage/
+test/
+*.test.js
+jest.config.js
 
 # Build outputs
 dist/

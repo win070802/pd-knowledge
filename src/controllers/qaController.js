@@ -1,13 +1,20 @@
 const { db } = require('../../database');
 const geminiService = require('../../services/gemini');
 const ConversationService = require('../services/conversation/conversationService');
+const QuestionAnalysisService = require('../services/ai/questionAnalysisService');
+const DataIntegrationService = require('../services/ai/dataIntegrationService');
+const ContentClassifier = require('../utils/content/contentClassifier');
 
 const conversationService = new ConversationService();
+const questionAnalysisService = new QuestionAnalysisService();
+const dataIntegrationService = new DataIntegrationService();
+const contentClassifier = new ContentClassifier();
 
 // Ask question with conversation context
 const askQuestion = async (req, res) => {
   try {
     const { question, sessionId, userId } = req.body;
+    const startTime = Date.now();
 
     if (!question || question.trim().length === 0) {
       return res.status(400).json({ success: false, error: 'Question is required' });
@@ -23,6 +30,29 @@ const askQuestion = async (req, res) => {
     const savedQuestion = await conversationService.saveMessage(actualSessionId, 'question', question.trim());
     if (!savedQuestion) {
       throw new Error(`Failed to save question to session ${actualSessionId}`);
+    }
+
+    // Kiểm tra nội dung nhạy cảm
+    const isSensitive = await contentClassifier.isSensitiveContent(question);
+    if (isSensitive) {
+      const answer = `⚠️ Câu hỏi của bạn có thể chứa nội dung nhạy cảm hoặc không phù hợp với chính sách của hệ thống. Vui lòng đặt câu hỏi khác hoặc liên hệ quản trị viên nếu bạn cho rằng đây là lỗi.`;
+      
+      await conversationService.saveMessage(actualSessionId, 'answer', answer, [], { 
+        isSensitive: true,
+        originalQuestion: question.trim()
+      });
+
+      return res.json({
+        success: true,
+        sessionId: actualSessionId,
+        question: question.trim(),
+        answer,
+        relevantDocuments: [],
+        responseTime: Date.now() - startTime,
+        contextInfo: {
+          isSensitive: true
+        }
+      });
     }
 
     // Then resolve references (which needs the history)
@@ -43,7 +73,7 @@ const askQuestion = async (req, res) => {
         question: question.trim(),
         answer,
         relevantDocuments: [],
-        responseTime: 50,
+        responseTime: Date.now() - startTime,
         contextInfo: {
           hasReference: referenceResolution.hasReference,
           resolved: false,
@@ -56,20 +86,84 @@ const askQuestion = async (req, res) => {
     const processQuestion = referenceResolution.resolvedQuestion;
     console.log(`🔗 Using question: "${processQuestion}"`);
 
-    const result = await geminiService.askQuestion(processQuestion);
+    // Phân tích câu hỏi để xác định intent, chủ đề và nguồn dữ liệu
+    const questionAnalysis = await questionAnalysisService.analyzeQuestion(processQuestion, actualSessionId);
+    console.log(`📊 Question analysis:`, JSON.stringify(questionAnalysis));
+    
+    // Xử lý nếu phát hiện nội dung nhạy cảm từ phân tích
+    if (questionAnalysis.intent === 'sensitive_content') {
+      const answer = `⚠️ Câu hỏi của bạn có thể chứa nội dung nhạy cảm hoặc không phù hợp với chính sách của hệ thống. Vui lòng đặt câu hỏi khác hoặc liên hệ quản trị viên nếu bạn cho rằng đây là lỗi.`;
+      
+      await conversationService.saveMessage(actualSessionId, 'answer', answer, [], { 
+        isSensitive: true,
+        originalQuestion: question.trim()
+      });
+
+      return res.json({
+        success: true,
+        sessionId: actualSessionId,
+        question: question.trim(),
+        answer,
+        relevantDocuments: [],
+        responseTime: Date.now() - startTime,
+        contextInfo: {
+          isSensitive: true
+        }
+      });
+    }
+    
+    // Hợp nhất dữ liệu từ nhiều nguồn
+    const integratedData = await dataIntegrationService.integrateData(processQuestion, questionAnalysis);
+    
+    // Xử lý câu hỏi với dữ liệu đã hợp nhất
+    let result;
+    
+    // Nếu có constraint phù hợp, sử dụng nó
+    if (integratedData.constraint) {
+      result = {
+        answer: integratedData.constraint.answer,
+        relevantDocuments: [],
+        responseTime: Date.now() - startTime
+      };
+    }
+    // Nếu không có constraint, xử lý theo nguồn dữ liệu
+    else {
+      // Ưu tiên sử dụng geminiService.askQuestion nếu có tài liệu hoặc knowledge entries
+      if (integratedData.documents.length > 0 || integratedData.knowledgeEntries.length > 0) {
+        result = await geminiService.askQuestion(processQuestion, {
+          documents: integratedData.documents,
+          knowledgeEntries: integratedData.knowledgeEntries,
+          companyInfo: integratedData.companyInfo,
+          departmentInfo: integratedData.departmentInfo,
+          analysisResult: questionAnalysis
+        });
+      }
+      // Nếu không có dữ liệu, xử lý như câu hỏi chung
+      else {
+        result = await geminiService.askQuestion(processQuestion);
+      }
+    }
+
+    // Bổ sung metadata về phân tích câu hỏi vào kết quả
+    result.analysisResult = questionAnalysis;
+    
+    // Lưu thông tin về nguồn dữ liệu đã sử dụng
+    const metadata = {
+      responseTime: result.responseTime || (Date.now() - startTime),
+      originalQuestion: question.trim(),
+      resolvedQuestion: processQuestion,
+      hasReference: referenceResolution.hasReference,
+      analysisResult: questionAnalysis,
+      dataSources: integratedData.metadata?.sources || []
+    };
 
     // Save the answer to conversation history
     await conversationService.saveMessage(
       actualSessionId, 
       'answer', 
       result.answer, 
-      result.relevantDocuments,
-      { 
-        responseTime: result.responseTime,
-        originalQuestion: question.trim(),
-        resolvedQuestion: processQuestion,
-        hasReference: referenceResolution.hasReference
-      }
+      result.relevantDocuments || [],
+      metadata
     );
 
     res.json({
@@ -77,13 +171,15 @@ const askQuestion = async (req, res) => {
       sessionId: actualSessionId,
       question: question.trim(),
       answer: result.answer,
-      relevantDocuments: result.relevantDocuments,
-      responseTime: result.responseTime,
+      relevantDocuments: result.relevantDocuments || [],
+      responseTime: result.responseTime || (Date.now() - startTime),
       contextInfo: {
         hasReference: referenceResolution.hasReference,
         resolved: referenceResolution.hasReference,
         resolvedQuestion: referenceResolution.hasReference ? processQuestion : undefined,
-        referencedDocuments: referenceResolution.referencedDocuments || []
+        referencedDocuments: referenceResolution.referencedDocuments || [],
+        analysisResult: questionAnalysis,
+        dataSources: integratedData.metadata?.sources || []
       }
     });
 
