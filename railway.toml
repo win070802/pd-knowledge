@@ -1,0 +1,16 @@
+[build]
+  builder = "NIXPACKS"
+
+[deploy]
+  startCommand = "npm start"
+  healthcheckEnabled = true
+  healthcheckPath = "/simple-health"
+  healthcheckTimeout = 120
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  SSL_ENABLED = "true"
+  SSL_REJECT_UNAUTHORIZED = "true"
+  API_TIMEOUT_MINUTES = "15"
+  UPLOAD_TIMEOUT_MINUTES = "30" 
