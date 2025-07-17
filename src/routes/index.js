@@ -22,11 +22,6 @@ router.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Railway health check
-router.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', timestamp: new Date().toISOString() });
-});
-
 // Main file upload (requires authentication)
 router.post('/api/upload', authenticate, upload.single('file'), documentsController.uploadDocument);
 
