@@ -21,7 +21,7 @@ class UserRepository {
   async getUserByUsername(username) {
     const client = await pool.connect();
     try {
-      const result = await client.query('SELECT * FROM users WHERE username = $1 AND is_active = TRUE', [username]);
+      const result = await client.query('SELECT * FROM users WHERE username = $1', [username]);
       return result.rows[0];
     } finally {
       client.release();
@@ -31,7 +31,7 @@ class UserRepository {
   async getUserById(id) {
     const client = await pool.connect();
     try {
-      const result = await client.query('SELECT * FROM users WHERE id = $1 AND is_active = TRUE', [id]);
+      const result = await client.query('SELECT * FROM users WHERE id = $1', [id]);
       if (result.rows.length > 0) {
         const { password, ...userWithoutPassword } = result.rows[0];
         return userWithoutPassword;
@@ -45,7 +45,7 @@ class UserRepository {
   async getUsers() {
     const client = await pool.connect();
     try {
-      const result = await client.query('SELECT id, username, full_name, phone, birth_date, position, location, role, is_active, created_at FROM users ORDER BY created_at DESC');
+      const result = await client.query('SELECT id, username, full_name, phone, birth_date, position, location, role, created_at FROM users ORDER BY created_at DESC');
       return result.rows;
     } finally {
       client.release();
@@ -55,7 +55,7 @@ class UserRepository {
   async validatePassword(username, password) {
     const client = await pool.connect();
     try {
-      const result = await client.query('SELECT * FROM users WHERE username = $1 AND is_active = TRUE', [username]);
+      const result = await client.query('SELECT * FROM users WHERE username = $1', [username]);
       if (result.rows.length === 0) {
         return null;
       }
@@ -121,7 +121,8 @@ class UserRepository {
   async deactivateUser(id) {
     const client = await pool.connect();
     try {
-      const result = await client.query('UPDATE users SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id', [id]);
+      // Thay vì cập nhật is_active, chúng ta sẽ đánh dấu người dùng bằng cách thêm "_deactivated" vào username
+      const result = await client.query('UPDATE users SET username = CONCAT(username, \'_deactivated\'), updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id', [id]);
       return result.rowCount > 0;
     } finally {
       client.release();

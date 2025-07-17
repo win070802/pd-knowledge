@@ -6,6 +6,7 @@ class AuthController {
   async login(req, res) {
     try {
       const { username, password } = req.body;
+      console.log('Login attempt:', { username });
 
       if (!username || !password) {
         return res.status(400).json({
@@ -15,7 +16,9 @@ class AuthController {
       }
 
       // Validate user credentials
+      console.log('Validating user credentials...');
       const user = await userRepository.validatePassword(username, password);
+      console.log('User found:', user ? 'yes' : 'no');
       
       if (!user) {
         return res.status(401).json({

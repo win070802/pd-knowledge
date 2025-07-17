@@ -13,17 +13,34 @@ async function migrateDatabase() {
     
     console.log('📋 Creating tables if they don\'t exist...');
     
+    // Create users table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        full_name VARCHAR(255) NOT NULL,
+        phone VARCHAR(20),
+        birth_date DATE,
+        position VARCHAR(255),
+        location VARCHAR(255),
+        role VARCHAR(20) DEFAULT 'admin',
+        is_active BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Users table ensured');
+    
     // Create companies table
     await client.query(`
       CREATE TABLE IF NOT EXISTS companies (
         id SERIAL PRIMARY KEY,
         code VARCHAR(10) UNIQUE NOT NULL,
         full_name VARCHAR(255) NOT NULL,
-        parent_group VARCHAR(255),
+        description TEXT,
         chairman VARCHAR(255),
         ceo VARCHAR(255),
-        description TEXT,
-        keywords TEXT[],
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -162,44 +179,44 @@ async function migrateDatabase() {
         {
           code: 'PDH',
           full_name: 'Phát Đạt Holdings',
-          parent_group: 'Phát Đạt Group',
           description: 'Công ty mẹ của Tập đoàn Phát Đạt',
-          keywords: ['PDH', 'Phát Đạt', 'Holdings', 'Tập đoàn']
+          chairman: 'Nguyễn Văn Đạt',
+          ceo: 'Bùi Quang Anh Vũ'
         },
         {
           code: 'PDI',
           full_name: 'Phát Đạt Industrial',
-          parent_group: 'Phát Đạt Group',
           description: 'Công ty công nghiệp của Tập đoàn Phát Đạt',
-          keywords: ['PDI', 'Phát Đạt', 'Industrial', 'Công nghiệp']
+          chairman: 'Nguyễn Văn Nam',
+          ceo: 'Trần Công Hiếu'
         },
         {
           code: 'PDE',
           full_name: 'Phát Đạt Energy',
-          parent_group: 'Phát Đạt Group',
           description: 'Công ty năng lượng của Tập đoàn Phát Đạt',
-          keywords: ['PDE', 'Phát Đạt', 'Energy', 'Năng lượng']
+          chairman: 'Lê Văn Minh',
+          ceo: 'Phạm Thị Hương'
         },
         {
           code: 'PDHOS',
           full_name: 'Phát Đạt Hospitality',
-          parent_group: 'Phát Đạt Group',
           description: 'Công ty khách sạn và du lịch của Tập đoàn Phát Đạt',
-          keywords: ['PDHOS', 'Phát Đạt', 'Hospitality', 'Khách sạn']
+          chairman: 'Trần Văn Lộc',
+          ceo: 'Nguyễn Thị Mai'
         },
         {
           code: 'RHS',
           full_name: 'Realty Holdings',
-          parent_group: 'Phát Đạt Group',
           description: 'Công ty bất động sản của Tập đoàn Phát Đạt',
-          keywords: ['RHS', 'Realty', 'Holdings', 'Bất động sản']
+          chairman: 'Vũ Văn Hùng',
+          ceo: 'Lê Thị Lan'
         }
       ];
       
       for (const company of defaultCompanies) {
         await client.query(
-          'INSERT INTO companies (code, full_name, parent_group, description, keywords) VALUES ($1, $2, $3, $4, $5)',
-          [company.code, company.full_name, company.parent_group, company.description, company.keywords]
+          'INSERT INTO companies (code, full_name, description, chairman, ceo) VALUES ($1, $2, $3, $4, $5)',
+          [company.code, company.full_name, company.description, company.chairman, company.ceo]
         );
         console.log(`✅ Added company: ${company.code} - ${company.full_name}`);
       }
@@ -208,7 +225,38 @@ async function migrateDatabase() {
     }
     
     // =====================================================
-    // 4. VERIFY MIGRATION SUCCESS
+    // 4. CREATE DEFAULT ADMIN USER IF NOT EXISTS
+    // =====================================================
+    
+    console.log('👤 Checking for default admin user...');
+    
+    const bcrypt = require('bcrypt');
+    const existingAdmin = await client.query('SELECT id FROM users WHERE username = $1', ['admin']);
+    
+    if (existingAdmin.rows.length === 0) {
+      console.log('📝 Creating default admin user...');
+      const hashedPassword = await bcrypt.hash('Admin@123123', 10);
+      await client.query(`
+        INSERT INTO users (username, password, full_name, phone, birth_date, position, location, role, is_active) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [
+        'admin',
+        hashedPassword,
+        'Trần Minh Khôi',
+        '0988204060',
+        '2002-08-07',
+        'Nhân viên công nghệ thông tin',
+        'Hồ Chí Minh, Việt Nam',
+        'admin',
+        true
+      ]);
+      console.log('✅ Default admin user created: admin/Admin@123123');
+    } else {
+      console.log('ℹ️  Default admin user already exists');
+    }
+    
+    // =====================================================
+    // 5. VERIFY MIGRATION SUCCESS
     // =====================================================
     
     console.log('🔍 Verifying migration success...');
@@ -230,6 +278,10 @@ async function migrateDatabase() {
     const finalCompaniesCount = await client.query('SELECT COUNT(*) FROM companies');
     console.log(`🏢 Companies in database: ${finalCompaniesCount.rows[0].count}`);
     
+    // Check users count
+    const finalUsersCount = await client.query('SELECT COUNT(*) FROM users');
+    console.log(`👤 Users in database: ${finalUsersCount.rows[0].count}`);
+    
     console.log('✅ Database migration completed successfully');
     
   } catch (error) {
@@ -249,4 +301,4 @@ migrateDatabase()
   .catch(error => {
     console.error('💥 Migration failed:', error);
     process.exit(1);
-  }); 
+  });

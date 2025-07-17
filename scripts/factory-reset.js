@@ -180,11 +180,9 @@ class FactoryResetService {
   // Reinitialize database schema
   async reinitializeDatabase() {
     console.log('🔧 Reinitializing database schema...');
-    
     try {
-      // Use existing database initialization
-      const { initializeDatabase } = require('../database');
-      await initializeDatabase();
+      const { execSync } = require('child_process');
+      execSync('node scripts/migrate-production.js', { stdio: 'inherit' });
       console.log('✅ Database schema reinitialized');
     } catch (error) {
       console.error('❌ Failed to reinitialize database:', error.message);

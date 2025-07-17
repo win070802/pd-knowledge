@@ -254,13 +254,13 @@ class ConversationService {
           analysis: {
             confidence: analysis.confidence,
             explanation: analysis.explanation
-          }
+                  }
         };
       }
       
       console.log(`🔍 AI phát hiện tham chiếu trong câu hỏi (độ tin cậy: ${analysis.confidence}%)`);
       console.log(`   - Giải thích: ${analysis.explanation}`);
-      
+
       // Nếu AI đã giải quyết tham chiếu, sử dụng kết quả đó
       if (analysis.resolvedQuestion && analysis.resolvedQuestion !== question) {
         console.log(`✅ Câu hỏi đã giải quyết tham chiếu: "${analysis.resolvedQuestion}"`);
@@ -293,7 +293,7 @@ class ConversationService {
           }
         }
       }
-      
+
       // Nếu không tìm thấy tài liệu nào
       if (referencedDocuments.length === 0) {
         return { 
@@ -305,8 +305,8 @@ class ConversationService {
             explanation: analysis.explanation
           }
         };
-      }
-      
+        }
+        
       // Nếu chỉ có một tài liệu, sử dụng nó
       if (referencedDocuments.length === 1) {
         const resolvedQuestion = `thông tin về tài liệu "${referencedDocuments[0].name}": ${question}`;

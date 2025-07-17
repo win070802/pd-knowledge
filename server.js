@@ -68,6 +68,19 @@ app.use(errorHandler);
 // 404 handler
 app.use('*', notFoundHandler);
 
+// Đảm bảo migrate schema trước khi start server
+if (process.env.NODE_ENV === 'production') {
+  const { execSync } = require('child_process');
+  try {
+    console.log('🔄 Migrating database schema for production...');
+    execSync('node scripts/migrate-production.js', { stdio: 'inherit' });
+    console.log('✅ Database migrated!');
+  } catch (err) {
+    console.error('❌ Database migration failed:', err);
+    process.exit(1);
+  }
+}
+
 // Start server
 async function startServer() {
   try {
