@@ -126,8 +126,8 @@ async function startServer() {
     
     console.log('Database ready');
     
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`🚀 Server running on 0.0.0.0:${PORT}`);
       console.log(`📄 API Documentation available at http://localhost:${PORT}/health`);
       console.log(`💬 Ready to answer questions about your documents!`);
     });
