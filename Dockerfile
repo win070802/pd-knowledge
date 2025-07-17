@@ -44,10 +44,6 @@ RUN chmod -R 644 /usr/share/tesseract-ocr/*/tessdata/ && \
 # Expose port
 EXPOSE 8080
 
-# Add Docker health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8080/ || exit 1
-
 # Create startup script
 RUN echo '#!/bin/sh\nnode scripts/migrate-production.js && node server.js' > /app/startup.sh && \
     chmod +x /app/startup.sh

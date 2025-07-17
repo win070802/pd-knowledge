@@ -8,6 +8,10 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+console.log(`🚀 Starting server with NODE_ENV: ${process.env.NODE_ENV}`);
+console.log(`🔌 Port configuration: ${PORT}`);
+console.log(`🔐 SSL enabled: ${process.env.SSL_ENABLED}`);
+
 // Create temp directory for file processing
 const tempDir = './temp';
 if (!fs.existsSync(tempDir)) {
