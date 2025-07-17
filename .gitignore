@@ -1,5 +1,10 @@
 # Google Cloud Service Account
 service-account-key.json
+vision-key.json
+*-key.json
+*_key.json
+*.pem
+*.key
 
 # Environment variables
 .env
@@ -57,6 +62,8 @@ temp/
 service-account-key.json
 vision-key.json
 .env
+data/service-account-key.json
+data/vision-key.json
 
 # Test files  
 PDH-*.pdf
@@ -68,3 +75,11 @@ vision-ocr-service-demo.js
 # Backup files
 *.backup
 *-backup.*
+*.bak
+*.old
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo

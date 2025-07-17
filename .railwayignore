@@ -75,6 +75,8 @@ test/
 # Backup files  
 *.bak
 *.backup
+*.old
+*-backup.*
 
 # Documentation (để giảm build size)
 docs/
@@ -86,3 +88,13 @@ Dockerfile*
 *.dockerfile
 docker-compose*
 .dockerignore
+
+# Sensitive files
+service-account-key.json
+vision-key.json
+*-key.json
+*_key.json
+*.pem
+*.key
+data/service-account-key.json
+data/vision-key.json

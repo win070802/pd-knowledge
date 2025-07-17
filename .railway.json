@@ -17,6 +17,9 @@
     "production": {
       "variables": {
         "NODE_ENV": "production",
+        "PORT": "8080",
+        "SSL_ENABLED": "true",
+        "SSL_REJECT_UNAUTHORIZED": "true",
         "UPLOAD_TIMEOUT_MINUTES": "30",
         "API_TIMEOUT_MINUTES": "15", 
         "MAX_FILE_SIZE": "150mb",
