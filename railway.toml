@@ -3,7 +3,7 @@
   buildCommand = "npm install"
 
 [deploy]
-  startCommand = "npm start"
+  startCommand = "node scripts/migrate-production.js && npm start"
   healthcheckPath = "/health"
   healthcheckTimeout = 60
 

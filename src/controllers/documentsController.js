@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { db } = require('../../database');
+const { pool } = require('../config/database');
 const { extractTextFromPDF } = require('../utils/pdfExtractor');
 const ocrService = require('../../services/ocr-service');
 
@@ -20,11 +21,11 @@ try {
 
 const storageService = require('../../services/storage-service');
 
-// 确保元数据表存在
+// Đảm bảo bảng metadata tồn tại
 async function ensureMetadataTables() {
   try {
-    // 检查元数据表是否存在
-    const tableExists = await db.query(`
+    // Kiểm tra bảng metadata có tồn tại không
+    const tableExists = await pool.query(`
       SELECT EXISTS (
         SELECT FROM information_schema.tables 
         WHERE table_schema = 'public' 
@@ -32,19 +33,19 @@ async function ensureMetadataTables() {
       );
     `);
     
-    // 如果表不存在，创建它们
+    // Nếu bảng không tồn tại, tạo chúng
     if (!tableExists.rows[0].exists) {
       console.log('📦 Creating metadata tables for cross-document validation...');
       
-      // 读取SQL创建脚本
+      // Đọc file SQL tạo script
       const sqlPath = path.join(__dirname, '../../scripts/create-metadata-tables.sql');
       if (fs.existsSync(sqlPath)) {
         const sql = fs.readFileSync(sqlPath, 'utf8');
-        await db.query(sql);
+        await pool.query(sql);
         console.log('✅ Metadata tables created successfully');
       } else {
-        // 如果找不到SQL文件，使用内联SQL
-        await db.query(`
+        // Nếu không tìm thấy SQL file, sử dụng SQL inline
+        await pool.query(`
           -- Document metadata table
           CREATE TABLE IF NOT EXISTS document_metadata (
             id SERIAL PRIMARY KEY,
@@ -103,7 +104,7 @@ async function ensureMetadataTables() {
     }
   } catch (error) {
     console.error('❌ Error ensuring metadata tables exist:', error);
-    // 继续执行，不中断上传流程
+    // Tiếp tục thực hiện, không dừng quá trình upload
   }
 }
 

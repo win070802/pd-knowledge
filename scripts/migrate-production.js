@@ -6,6 +6,8 @@ async function migrateDatabase() {
   
   try {
     console.log('🔄 Starting comprehensive database migration...');
+    console.log('📊 Database connection info:', process.env.DATABASE_URL ? 'Using DATABASE_URL' : 'Using DATABASE_PUBLIC_URL');
+    console.log('🔒 SSL enabled:', process.env.SSL_ENABLED);
     
     // =====================================================
     // 1. CREATE ALL TABLES IF NOT EXISTS
@@ -168,7 +170,7 @@ async function migrateDatabase() {
       { name: 'original_name', type: 'VARCHAR(255) NOT NULL' },
       { name: 'file_path', type: 'VARCHAR(500) NOT NULL' },
       { name: 'file_size', type: 'INTEGER NOT NULL' },
-      { name: 'page_count', type: 'INTEGER' }, // Thêm dòng này
+      { name: 'page_count', type: 'INTEGER' },
       { name: 'content_text', type: 'TEXT' },
       { name: 'company_id', type: 'INTEGER REFERENCES companies(id)' },
       { name: 'category', type: 'VARCHAR(100)' },
@@ -311,6 +313,76 @@ async function migrateDatabase() {
     // Check users count
     const finalUsersCount = await client.query('SELECT COUNT(*) FROM users');
     console.log(`👤 Users in database: ${finalUsersCount.rows[0].count}`);
+    
+    // Kiểm tra document_metadata table
+    try {
+      const metadataTable = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'document_metadata'
+        );
+      `);
+      
+      if (metadataTable.rows[0].exists) {
+        console.log('✅ Metadata tables exist');
+      } else {
+        console.log('⚠️ Metadata tables do not exist, creating them now...');
+        
+        // Tạo metadata tables
+        await client.query(`
+          -- Document metadata table
+          CREATE TABLE IF NOT EXISTS document_metadata (
+            id SERIAL PRIMARY KEY,
+            document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+            entities JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(document_id)
+          );
+
+          -- Company metadata table
+          CREATE TABLE IF NOT EXISTS company_metadata (
+            id SERIAL PRIMARY KEY,
+            company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(company_id)
+          );
+
+          -- Validation logs table
+          CREATE TABLE IF NOT EXISTS validation_logs (
+            id SERIAL PRIMARY KEY,
+            document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+            validation_type VARCHAR(100) NOT NULL,
+            original_text TEXT,
+            corrected_text TEXT,
+            entities_found JSONB DEFAULT '{}',
+            corrections_applied JSONB DEFAULT '[]',
+            conflicts_resolved JSONB DEFAULT '[]',
+            confidence_score DECIMAL(3,2) DEFAULT 0.0,
+            processing_time_ms INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT NOW()
+          );
+
+          -- Entity references table for fast lookup
+          CREATE TABLE IF NOT EXISTS entity_references (
+            id SERIAL PRIMARY KEY,
+            entity_name VARCHAR(255) NOT NULL,
+            entity_type VARCHAR(50) NOT NULL,
+            document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
+            company_id INTEGER REFERENCES companies(id) ON DELETE CASCADE,
+            confidence DECIMAL(3,2) DEFAULT 1.0,
+            created_at TIMESTAMP DEFAULT NOW()
+          );
+        `);
+        
+        console.log('✅ Metadata tables created');
+      }
+    } catch (error) {
+      console.error('❌ Error checking metadata tables:', error.message);
+    }
     
     console.log('✅ Database migration completed successfully');
     
