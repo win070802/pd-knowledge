@@ -5,7 +5,7 @@ class SensitiveRuleRepository {
     const client = await pool.connect();
     try {
       const result = await client.query(
-        'INSERT INTO sensitive_rules (pattern, description, category, active) VALUES ($1, $2, $3, $4) RETURNING *',
+        'INSERT INTO sensitive_rules (pattern, description, category, is_active) VALUES ($1, $2, $3, $4) RETURNING *',
         [ruleData.pattern, ruleData.description, ruleData.category || null, ruleData.isActive]
       );
       return result.rows[0];
@@ -21,7 +21,7 @@ class SensitiveRuleRepository {
       const params = [];
       
       if (activeOnly) {
-        query += ' WHERE active = $1';
+        query += ' WHERE is_active = $1';
         params.push(true);
       }
       
@@ -38,7 +38,7 @@ class SensitiveRuleRepository {
     const client = await pool.connect();
     try {
       const result = await client.query(
-        'UPDATE sensitive_rules SET pattern = $1, description = $2, category = $3, active = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5 RETURNING *',
+        'UPDATE sensitive_rules SET pattern = $1, description = $2, category = $3, is_active = $4, updated_at = CURRENT_TIMESTAMP WHERE id = $5 RETURNING *',
         [ruleData.pattern, ruleData.description, ruleData.category || null, ruleData.isActive, id]
       );
       return result.rows[0];
