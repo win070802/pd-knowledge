@@ -38,6 +38,7 @@ async function migrateDatabase() {
         id SERIAL PRIMARY KEY,
         code VARCHAR(10) UNIQUE NOT NULL,
         full_name VARCHAR(255) NOT NULL,
+        parent_group VARCHAR(255),
         description TEXT,
         chairman VARCHAR(255),
         ceo VARCHAR(255),
@@ -46,6 +47,23 @@ async function migrateDatabase() {
       )
     `);
     console.log('✅ Companies table ensured');
+
+    // Đảm bảo cột parent_group tồn tại (nếu migrate từ schema cũ)
+    const companiesColumns = await client.query(`
+      SELECT column_name FROM information_schema.columns WHERE table_name = 'companies'`);
+    const companyCols = companiesColumns.rows.map(row => row.column_name);
+    if (!companyCols.includes('parent_group')) {
+      console.log('📝 Adding missing column: parent_group to companies');
+      await client.query(`ALTER TABLE companies ADD COLUMN parent_group VARCHAR(255)`);
+      console.log('✅ Added column: parent_group');
+    }
+    
+    // Đảm bảo cột keywords tồn tại (nếu migrate từ schema cũ)
+    if (!companyCols.includes('keywords')) {
+      console.log('📝 Adding missing column: keywords to companies');
+      await client.query(`ALTER TABLE companies ADD COLUMN keywords TEXT[]`);
+      console.log('✅ Added column: keywords');
+    }
     
     // Create documents table with all necessary columns
     await client.query(`
