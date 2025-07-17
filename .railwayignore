@@ -71,17 +71,33 @@ Thumbs.db
 test/
 *.test.js
 *.spec.js
+jest.config.js
+mocha.opts
 
 # Backup files  
 *.bak
 *.backup
+*-backup.*
+*.bak2
+*.local
 
 # Documentation (để giảm build size)
 docs/
 scripts/test-*.js
+
+# Test scripts
+scripts/run-tests.js
+scripts/run-all-tests.js
+scripts/setup-cross-validation.js
+scripts/test-*
 
 # Force nixpacks - exclude ALL Docker files
 Dockerfile*
 *.dockerfile
 docker-compose*
 .dockerignore 
+
+# Development files that won't be needed in production
+*.postman_collection.json
+CONTRIBUTING.md
+CHANGELOG.md 
