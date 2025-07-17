@@ -97,6 +97,7 @@ const initializeDatabase = async () => {
         rule_name VARCHAR(255) NOT NULL,
         pattern TEXT NOT NULL,
         description TEXT,
+        category VARCHAR(100),
         is_active BOOLEAN DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
