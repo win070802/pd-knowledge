@@ -60,7 +60,7 @@ RUN mkdir -p temp temp-images uploads && \
 EXPOSE ${PORT:-8080}
 
 # Tạo startup script
-RUN echo '#!/bin/sh\nnode scripts/migrate-production.js && node server.js' > /app/startup.sh && \
+RUN echo '#!/bin/sh\nnode server-debug.js' > /app/startup.sh && \
     chmod +x /app/startup.sh
 
 # Health check disabled

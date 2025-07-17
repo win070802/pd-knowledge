@@ -7,6 +7,10 @@ const PORT = process.env.PORT || 8080;
 
 console.log(`🚀 Starting basic server with NODE_ENV: ${process.env.NODE_ENV}`);
 console.log(`🔌 Port configuration: ${PORT}`);
+console.log(`📊 Database URL: ${process.env.DATABASE_URL ? 'Set' : 'Not set'}`);
+console.log(`📊 Database Public URL: ${process.env.DATABASE_PUBLIC_URL ? 'Set' : 'Not set'}`);
+console.log(`🔐 SSL enabled: ${process.env.SSL_ENABLED}`);
+console.log(`🔐 SSL Reject Unauthorized: ${process.env.SSL_REJECT_UNAUTHORIZED}`);
 
 // Xử lý lỗi không bắt được
 process.on('uncaughtException', (error) => {
@@ -74,6 +78,20 @@ app.get('/api', (req, res) => {
       '/api/learn',
       '/api/upload'
     ]
+  });
+});
+
+// Environment info endpoint
+app.get('/api/env', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    environment: process.env.NODE_ENV || 'development',
+    port: process.env.PORT || 8080,
+    database_url: process.env.DATABASE_URL ? 'Set' : 'Not set',
+    database_public_url: process.env.DATABASE_PUBLIC_URL ? 'Set' : 'Not set',
+    ssl_enabled: process.env.SSL_ENABLED || 'false',
+    ssl_reject_unauthorized: process.env.SSL_REJECT_UNAUTHORIZED || 'false',
+    timestamp: new Date().toISOString()
   });
 });
 
