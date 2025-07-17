@@ -17,3 +17,5 @@ rules:
     description: "Convert arrow functions to regular function declarations for consistency"
     pattern: "const\\s+(\\w+)\\s*=\\s*\\(([^)]*)\\)\\s*=>"
     replacement: "function $1($2)"
+server:
+  port: 8080

@@ -1,33 +1,31 @@
 # Railway-optimized Dockerfile with better caching
 FROM node:18-alpine
 
-# Set working directory early
+# Set working directory
 WORKDIR /app
 
-# Copy package files first for better layer caching
+# Copy package files
 COPY package*.json ./
 
-# Install Node.js dependencies first (cached layer)
+# Install dependencies
 RUN npm ci --only=production && npm cache clean --force
 
-# Install system dependencies in separate layers for better caching
+# Install minimal system dependencies
 RUN apk add --no-cache \
     imagemagick \
     tesseract-ocr \
     tesseract-ocr-data-vie \
     tesseract-ocr-data-eng \
     ghostscript \
-    graphicsmagick \
-    poppler-utils
+    poppler-utils \
+    python3
 
-# Lightweight additional tools
-RUN apk add --no-cache \
-    python3 \
-    make \
-    g++
-
-# Create tessdata directory
-RUN mkdir -p /usr/share/tesseract-ocr/4/tessdata /usr/share/tesseract-ocr/5/tessdata
+# Create directories
+RUN mkdir -p /usr/share/tesseract-ocr/4/tessdata \
+    /usr/share/tesseract-ocr/5/tessdata \
+    /app/temp \
+    /app/temp-images \
+    /app/uploads
 
 # Copy application files
 COPY . .
@@ -39,21 +37,15 @@ RUN if [ -d data ]; then \
     fi
 
 # Set proper permissions
-RUN chmod -R 644 /usr/share/tesseract-ocr/*/tessdata/
-
-# Create necessary directories
-RUN mkdir -p temp temp-images uploads
+RUN chmod -R 644 /usr/share/tesseract-ocr/*/tessdata/ && \
+    chmod -R 755 /app/temp /app/temp-images /app/uploads
 
 # Expose port
-EXPOSE ${PORT:-8080}
+EXPOSE 8080
 
-# Health check - sử dụng wget thay vì node script
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8080}/health || exit 1
-
-# Setup script to run before starting the application
-RUN echo '#!/bin/sh\nnode scripts/create-database.js && node scripts/migrate-production.js && node server.js' > /app/startup.sh && \
+# Create startup script
+RUN echo '#!/bin/sh\nnode scripts/migrate-production.js && node server.js' > /app/startup.sh && \
     chmod +x /app/startup.sh
 
-# Start application with setup
+# Start application
 CMD ["/app/startup.sh"] 

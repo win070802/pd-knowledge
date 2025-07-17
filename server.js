@@ -6,7 +6,7 @@ const routes = require('./src/routes/index');
 require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 8080;
 
 // Create temp directory for file processing
 const tempDir = './temp';
