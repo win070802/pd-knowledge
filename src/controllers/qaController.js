@@ -4,6 +4,7 @@ const ConversationService = require('../services/conversation/conversationServic
 const QuestionAnalysisService = require('../services/ai/questionAnalysisService');
 const DataIntegrationService = require('../services/ai/dataIntegrationService');
 const ContentClassifier = require('../utils/content/contentClassifier');
+const documentRepository = require('../repositories/documentRepository');
 
 const conversationService = new ConversationService();
 const questionAnalysisService = new QuestionAnalysisService();
@@ -124,6 +125,13 @@ const askQuestion = async (req, res) => {
     
     // Hợp nhất dữ liệu từ nhiều nguồn
     const integratedData = await dataIntegrationService.integrateData(processQuestion, questionAnalysis);
+
+    // Nếu là intent list_documents, lưu danh sách documentId vào session context
+    if (questionAnalysis.intent === 'list_documents' && integratedData.documents && integratedData.documents.length > 0) {
+      // Lưu mảng id tài liệu vào context
+      const documentIdList = integratedData.documents.map(doc => doc.id);
+      await conversationService.updateSessionContext(actualSessionId, { lastDocumentList: documentIdList });
+    }
     
     // Xử lý câu hỏi với dữ liệu đã hợp nhất
     let result;
@@ -176,6 +184,50 @@ const askQuestion = async (req, res) => {
       result.relevantDocuments || [],
       metadata
     );
+
+    // Nếu là intent document_by_index và có documentId, trả về chi tiết tài liệu
+    if (questionAnalysis.intent === 'document_by_index' && questionAnalysis.documentId) {
+      // Lấy chi tiết tài liệu từ DB
+      const docDetail = await documentRepository.getDocumentById(questionAnalysis.documentId);
+      if (docDetail) {
+        const answer = `Chi tiết tài liệu số ${questionAnalysis.index + 1}:
+- Tên: ${docDetail.original_name}
+- Loại: ${docDetail.category}
+- Dung lượng: ${docDetail.file_size} bytes
+- Số trang: ${docDetail.page_count || 'N/A'}
+- Mô tả: ${docDetail.metadata && docDetail.metadata.description ? docDetail.metadata.description : 'Không có mô tả.'}`;
+        await conversationService.saveMessage(actualSessionId, 'answer', answer, [docDetail], { byIndex: true, documentId: docDetail.id });
+        return res.json({
+          success: true,
+          sessionId: actualSessionId,
+          question: question.trim(),
+          answer,
+          relevantDocuments: [docDetail],
+          responseTime: Date.now() - startTime,
+          contextInfo: {
+            byIndex: true,
+            documentId: docDetail.id,
+            index: questionAnalysis.index
+          }
+        });
+      } else {
+        const answer = `Không tìm thấy tài liệu theo thứ tự yêu cầu trong danh sách trước đó.`;
+        await conversationService.saveMessage(actualSessionId, 'answer', answer, [], { byIndex: true, error: 'Not found' });
+        return res.json({
+          success: false,
+          sessionId: actualSessionId,
+          question: question.trim(),
+          answer,
+          relevantDocuments: [],
+          responseTime: Date.now() - startTime,
+          contextInfo: {
+            byIndex: true,
+            error: 'Not found',
+            index: questionAnalysis.index
+          }
+        });
+      }
+    }
 
     res.json({
       success: true,

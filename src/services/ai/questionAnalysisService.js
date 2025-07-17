@@ -39,6 +39,41 @@ class QuestionAnalysisService {
       if (sessionId) {
         sessionContext = await this.getSessionContext(sessionId);
       }
+
+      // --- BẮT ĐẦU: Phát hiện hỏi về thứ tự tài liệu ---
+      // Regex cho "tài liệu đầu tiên", "tài liệu thứ hai", ...
+      const indexPattern = /tài liệu (đầu tiên|thứ (\d+))/i;
+      const match = question.match(indexPattern);
+      if (match && sessionContext && Array.isArray(sessionContext.lastDocumentList)) {
+        let index = 0;
+        if (match[1] === 'đầu tiên') {
+          index = 0;
+        } else if (match[2]) {
+          index = parseInt(match[2], 10) - 1;
+        }
+        if (index >= 0 && index < sessionContext.lastDocumentList.length) {
+          return {
+            intent: 'document_by_index',
+            source: 'documents',
+            documentId: sessionContext.lastDocumentList[index],
+            index: index,
+            confidence: 95,
+            sessionContext: sessionContext,
+            error: null
+          };
+        } else {
+          return {
+            intent: 'document_by_index',
+            source: 'documents',
+            documentId: null,
+            index: index,
+            confidence: 60,
+            sessionContext: sessionContext,
+            error: 'Không tìm thấy tài liệu theo thứ tự yêu cầu trong danh sách trước đó.'
+          };
+        }
+      }
+      // --- KẾT THÚC: Phát hiện hỏi về thứ tự tài liệu ---
       
       // Kiểm tra nếu câu hỏi là yêu cầu danh sách tài liệu theo công ty
       const documentListPattern = /(danh sách|liệt kê|list|show|hiển thị|xem).*(tài liệu|document|file|văn bản|quy định|quy trình).*(của|thuộc|trong|ở|tại|liên quan đến|about).*?(PDH|PDI|PDE|PDHOS|RHS)/i;
