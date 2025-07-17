@@ -1,7 +1,6 @@
 const express = require('express');
 const morgan = require('morgan');
 const fs = require('fs');
-const { initializeDatabase } = require('./database');
 const { helmet, cors, limiter, errorHandler, notFoundHandler } = require('./src/middleware/security');
 const routes = require('./src/routes/index');
 require('dotenv').config();
@@ -89,9 +88,9 @@ async function startServer() {
     const wasReset = await checkFactoryReset();
     
     // Initialize database (or reinitialize if reset was performed)
-    if (!wasReset) {
-      await initializeDatabase();
-    }
+    // XÓA HOÀN TOÀN các dòng require hoặc gọi initializeDatabase
+    // Đảm bảo chỉ migrate schema bằng migrate-production.js cho production
+    
     console.log('Database ready');
     
     app.listen(PORT, () => {

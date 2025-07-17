@@ -225,19 +225,18 @@ async function migrateDatabase() {
     }
     
     // =====================================================
-    // 4. CREATE DEFAULT ADMIN USER IF NOT EXISTS
+    // 4. CREATE OR UPDATE DEFAULT ADMIN USER
     // =====================================================
     
-    console.log('👤 Checking for default admin user...');
-    
+    console.log('👤 Ensuring default admin user...');
     const bcrypt = require('bcrypt');
+    const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123123';
+    const hashedPassword = await bcrypt.hash(adminPassword, 10);
     const existingAdmin = await client.query('SELECT id FROM users WHERE username = $1', ['admin']);
-    
     if (existingAdmin.rows.length === 0) {
       console.log('📝 Creating default admin user...');
-      const hashedPassword = await bcrypt.hash('Admin@123123', 10);
       await client.query(`
-        INSERT INTO users (username, password, full_name, phone, birth_date, position, location, role, is_active) 
+        INSERT INTO users (username, password, full_name, phone, birth_date, position, location, role, is_active)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       `, [
         'admin',
@@ -250,9 +249,11 @@ async function migrateDatabase() {
         'admin',
         true
       ]);
-      console.log('✅ Default admin user created: admin/Admin@123123');
+      console.log('✅ Default admin user created: admin/' + adminPassword);
     } else {
-      console.log('ℹ️  Default admin user already exists');
+      console.log('🔄 Updating password for admin user...');
+      await client.query('UPDATE users SET password = $1 WHERE username = $2', [hashedPassword, 'admin']);
+      console.log('✅ Admin password updated: admin/' + adminPassword);
     }
     
     // =====================================================
