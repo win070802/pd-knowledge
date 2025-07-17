@@ -10,6 +10,22 @@
     "healthcheckPath": "/simple-health",
     "restartPolicyType": "ON_FAILURE",
     "healthcheckTimeout": 120,
-    "restartPolicyMaxRetries": 10
+    "restartPolicyMaxRetries": 3,
+    "healthcheckEnabled": true
+  },
+  "environments": {
+    "production": {
+      "variables": {
+        "NODE_ENV": "production",
+        "UPLOAD_TIMEOUT_MINUTES": "30",
+        "API_TIMEOUT_MINUTES": "15", 
+        "MAX_FILE_SIZE": "150mb",
+        "MAX_PDF_PAGES": "100"
+      }
+    }
+  },
+  "resources": {
+    "memoryGB": 3,
+    "vCPU": 1
   }
 } 
