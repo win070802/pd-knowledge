@@ -213,7 +213,6 @@ class ConversationService {
     }
   }
 
-  // Resolve references in question (e.g., "tài liệu đó", "file này")
   /**
    * Giải quyết các tham chiếu trong câu hỏi người dùng
    * 
@@ -240,12 +239,22 @@ class ConversationService {
       const context = sessionQuery.rows.length > 0 ? sessionQuery.rows[0].context : {};
       const history = await this.getConversationHistory(sessionId, 15); // Tăng số lượng tin nhắn lấy từ lịch sử
 
+      // Kiểm tra nếu là câu hỏi đầu tiên trong phiên hội thoại, không xem là tham chiếu
+      if (history.length <= 1) {
+        console.log(`⚠️ Phiên hội thoại mới hoặc không có lịch sử, không coi là tham chiếu`);
+        return { resolvedQuestion: question, hasReference: false };
+      }
+
       // Mở rộng danh sách từ khóa tham chiếu
       const referenceKeywords = [
         'tài liệu đó', 'document đó', 'file đó', 'quy định đó',
         'tài liệu này', 'document này', 'file này', 'quy định này',
         'tài liệu trước', 'file trước', 'cái đó', 'cái này',
-        'nó', 'đó', 'này', 'chi tiết', 'thông tin', 'nội dung',
+        'nó', 'đó', 'này', 'chi tiết', 'thông tin', 'nội dung'
+      ];
+
+      // Từ khóa dễ nhầm lẫn - cần xét trong ngữ cảnh cụ thể
+      const contextualKeywords = [
         'sơ đồ', 'tài liệu', 'mô tả', 'phân tích', 'trên',
         'tóm tắt', 'hướng dẫn', 'quy trình', 'quy định'
       ];
@@ -290,12 +299,25 @@ class ConversationService {
       const hasCompanyKeyword = companyKeywords.some(keyword => questionLower.includes(keyword));
       
       // Nếu là truy vấn danh sách kết hợp với tên công ty hoặc phòng ban, KHÔNG coi là tham chiếu
-      if (isListQuery && hasCompanyKeyword) {
+      if (isListQuery) {
+        console.log(`⚠️ Câu hỏi là truy vấn danh sách, không coi là tham chiếu`);
         return { resolvedQuestion: question, hasReference: false };
       }
       
       // Nếu câu hỏi chứa tên tài liệu cụ thể, KHÔNG coi là tham chiếu
       if (hasSpecificDocumentName) {
+        return { resolvedQuestion: question, hasReference: false };
+      }
+      
+      // Kiểm tra câu hỏi về phòng ban
+      const departmentKeywords = ['ban', 'phòng', 'bộ phận', 'team', 'nhóm', 'đội'];
+      const isDepartmentQuestion = departmentKeywords.some(keyword => 
+        questionLower.includes(keyword + ' ') || // Đảm bảo "ban" là từ riêng, không phải phần của từ khác
+        questionLower.startsWith(keyword + ' ')
+      );
+      
+      if (isDepartmentQuestion) {
+        console.log(`⚠️ Câu hỏi về phòng ban, không coi là tham chiếu`);
         return { resolvedQuestion: question, hasReference: false };
       }
       
@@ -333,12 +355,12 @@ class ConversationService {
             for (const doc of msg.relevant_documents) {
               if (doc.name && content.includes(doc.name.toLowerCase())) {
                 lastMentionedDocName = doc.name;
-            break;
-          }
-        }
+                break;
+              }
+            }
             
             if (lastMentionedDocName || lastDocumentsInHistory.length > 0) break;
-      }
+          }
 
           // Kiểm tra tin nhắn câu hỏi để tìm dấu hiệu của việc nói về tài liệu
           if (msg.message_type === 'question') {
@@ -370,6 +392,14 @@ class ConversationService {
       const hasExplicitReference = referenceKeywords.some(keyword => 
         questionLower.includes(keyword)
       );
+
+      // Xác định tham chiếu ngữ cảnh (phải kết hợp với các điều kiện khác)
+      let hasContextualReference = false;
+      if (lastDocumentsInHistory.length > 0) {
+        hasContextualReference = contextualKeywords.some(keyword => 
+          questionLower.includes(keyword)
+        );
+      }
       
       // Xác định xem câu hỏi có phải là tham chiếu ngầm không
       // 1. Nếu có tài liệu trước đó và câu hỏi hiện tại ngắn
@@ -378,7 +408,7 @@ class ConversationService {
       const hasImplicitReference = lastDocumentsInHistory.length > 0 && (
         (question.length < 50 && 
          (questionLower.includes('chi tiết') ||
-         questionLower.includes('tóm tắt') ||
+          questionLower.includes('tóm tắt') ||
           questionLower.includes('nội dung') ||
           questionLower.startsWith('trong đó'))) ||
         (history.length > 1 && 
@@ -492,7 +522,7 @@ class ConversationService {
           error: 'Không tìm thấy tài liệu nào được đề cập trong cuộc hội thoại trước đó.'
         };
       }
-
+      
       // Tìm tài liệu phù hợp nhất với nội dung câu hỏi
       let matchedDocument = null;
       let highestMatchScore = 0;
@@ -561,8 +591,8 @@ class ConversationService {
         for (const pair of keywordPairs) {
           if (docNameLower.includes(pair.doc) && questionLower.includes(pair.question)) {
             matchScore += pair.score;
+          }
         }
-      }
 
         // Kiểm tra các trường hợp đặc biệt
         if ((docNameLower.includes('quy-trinh-vay-von') || docNameLower.includes('vay von') || docNameLower.includes('vay-von')) && 
