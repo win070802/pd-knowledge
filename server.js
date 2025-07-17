@@ -92,18 +92,8 @@ app.use(errorHandler);
 app.use('*', notFoundHandler);
 
 // Đảm bảo migrate schema trước khi start server
-if (process.env.NODE_ENV === 'production') {
-  try {
-    console.log('🔄 Migrating database schema for production...');
-    // Sử dụng require thay vì execSync để tránh lỗi
-    require('./scripts/migrate-production');
-    console.log('✅ Database migrated!');
-  } catch (err) {
-    console.error('❌ Database migration failed:', err);
-    // Không thoát process để server vẫn chạy được
-    console.error('⚠️ Continuing without migration');
-  }
-}
+// Chuyển phần này vào hàm startServer để đảm bảo xử lý bất đồng bộ đúng cách
+// Migration sẽ được thực hiện trong startup.sh
 
 // Start server
 async function startServer() {
@@ -122,15 +112,18 @@ async function startServer() {
     
     // Initialize database (or reinitialize if reset was performed)
     try {
-      const { initializeDatabase } = require('./database');
-      await initializeDatabase();
-      console.log('✅ Database initialized successfully');
+      // Kiểm tra kết nối database trước
+      const { pool } = require('./src/config/database');
+      const client = await pool.connect();
+      console.log('✅ Database connection successful');
+      client.release();
+      
+      // Khởi tạo database nếu cần
+      console.log('✅ Database ready');
     } catch (dbError) {
-      console.error('❌ Error initializing database:', dbError);
-      console.error('⚠️ Continuing without database initialization');
+      console.error('❌ Error connecting to database:', dbError);
+      console.error('⚠️ Continuing without database connection');
     }
-    
-    console.log('Database ready');
     
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`🚀 Server running on 0.0.0.0:${PORT}`);
