@@ -346,7 +346,7 @@ Trả lời CHÍNH XÁC theo format:
   }
 
   // Check for duplicate documents using content similarity
-  async checkForDuplicates(text, filename, companyId = null) {
+  async checkForDuplicates(text, originalName, companyId = null) {
     try {
       console.log(`🔍 Checking for duplicate documents...`);
       

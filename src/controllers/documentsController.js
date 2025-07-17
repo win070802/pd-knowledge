@@ -321,12 +321,13 @@ const uploadDocument = async (req, res) => {
         console.warn('⚠️ visionOCRService missing setDbConnection method');
       }
       
-      // Thêm thông tin về trạng thái xử lý vào tài liệu
+      // Thêm thông tin về trạng thái xử lý vào metadata của tài liệu
       await db.updateDocument(documentToSave.id, {
-        processing_notes: JSON.stringify({
+        metadata: {
+          ...documentToSave.metadata,
           validation_started: true,
           validation_timestamp: new Date().toISOString()
-        })
+        }
       });
       
       const validationResult = await visionOCRService.performCrossDocumentValidation(
@@ -342,12 +343,13 @@ const uploadDocument = async (req, res) => {
         
         // Thêm thông tin lỗi vào metadata của tài liệu
         await db.updateDocument(documentToSave.id, {
-          processing_notes: JSON.stringify({
+          metadata: {
+            ...documentToSave.metadata,
             validation_error: validationResult.error,
             validation_error_type: validationResult.errorType,
             validation_timestamp: new Date().toISOString(),
             requires_manual_review: true
-          })
+          }
         });
         
         // Nếu là lỗi database nghiêm trọng, trả về lỗi cho client
@@ -383,11 +385,12 @@ const uploadDocument = async (req, res) => {
       // Ghi chú lỗi vào tài liệu nhưng vẫn tiếp tục quá trình
       try {
         await db.updateDocument(documentToSave.id, {
-          processing_notes: JSON.stringify({
+          metadata: {
+            ...documentToSave.metadata,
             validation_error: validationError.message,
             validation_timestamp: new Date().toISOString(),
             requires_manual_review: true
-          })
+          }
         });
       } catch (updateError) {
         console.error('❌ Could not update document with validation error:', updateError);
