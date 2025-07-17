@@ -1,1 +1,1 @@
-web: node scripts/migrate-production.js && node server.js 
+web: npm start 

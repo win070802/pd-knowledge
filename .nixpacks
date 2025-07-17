@@ -8,4 +8,4 @@ cmds = ['npm ci']
 cmds = ['mkdir -p temp temp-images uploads']
 
 [start]
-cmd = 'node scripts/migrate-production.js && node server.js' 
+cmd = 'npm start' 
