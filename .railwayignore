@@ -81,7 +81,8 @@ docs/
 scripts/test-*.js
 
 # Force nixpacks - exclude ALL Docker files
+Dockerfile
 Dockerfile*
 *.dockerfile
 docker-compose*
-.dockerignore 
+.dockerignore

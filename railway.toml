@@ -1,10 +1,10 @@
 [build]
-  builder = "dockerfile"
-  # Không cần buildCommand khi sử dụng Dockerfile
+  # Disable Dockerfile and use Nixpacks instead
+  builder = "nixpacks"
+  buildCommand = "npm ci"
 
 [deploy]
   startCommand = "node scripts/migrate-production.js && node server.js"
-  # Enable health check with longer timeout
   healthcheckEnabled = true
   healthcheckPath = "/simple-health"
   healthcheckTimeout = 120

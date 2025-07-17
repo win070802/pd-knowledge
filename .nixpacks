@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ['imagemagick', 'tesseract', 'tesseract-language-vie', 'tesseract-language-eng', 'ghostscript', 'graphicsmagick', 'poppler_utils', 'python3']
+
+[phases.install]
+cmds = ['npm ci']
+
+[phases.build]
+cmds = ['mkdir -p temp temp-images uploads']
+
+[start]
+cmd = 'node scripts/migrate-production.js && node server.js' 

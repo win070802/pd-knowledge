@@ -83,6 +83,13 @@ app.use((req, res, next) => {
     console.log(`🕒 Upload timeout set to ${(timeout / 60000).toFixed(1)} minutes`);
   }
   
+  // In Railway environment, don't set timeouts as they can conflict with the platform's own timeouts
+  if (process.env.RAILWAY_STATIC_URL) {
+    console.log('🚂 Running in Railway environment, not setting explicit timeouts');
+    next();
+    return;
+  }
+  
   req.setTimeout(timeout);
   res.setTimeout(timeout);
   next();
