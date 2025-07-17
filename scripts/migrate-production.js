@@ -69,10 +69,9 @@ async function migrateDatabase() {
       CREATE TABLE IF NOT EXISTS conversation_messages (
         id SERIAL PRIMARY KEY,
         conversation_id INTEGER REFERENCES conversations(id) ON DELETE CASCADE,
-        session_id VARCHAR(255) NOT NULL,
-        type VARCHAR(50) NOT NULL,
-        message TEXT NOT NULL,
-        document_ids INTEGER[],
+        message_type VARCHAR(50) NOT NULL,
+        content TEXT NOT NULL,
+        relevant_documents JSONB,
         metadata JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
