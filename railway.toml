@@ -1,6 +1,6 @@
 [build]
-  builder = "nixpacks"
-  buildCommand = "npm install"
+  builder = "dockerfile"
+  # Không cần buildCommand khi sử dụng Dockerfile
 
 [deploy]
   startCommand = "node server.js"
