@@ -258,11 +258,11 @@ const uploadDocument = async (req, res) => {
     if (!documentToSave) {
       documentToSave = await db.createDocument({
         filename: fileName,
-        originalName: originalName,
-        filePath: finalStorageResult.path,
-        fileSize: fileSize,
-        content: contentText,
-        companyId: finalCompanyId,
+        original_name: originalName,
+        file_path: finalStorageResult.path,
+        file_size: fileSize,
+        content_text: contentText,
+        company_id: finalCompanyId,
         category: category,
         metadata: {
           uploadedAt: new Date().toISOString(),
