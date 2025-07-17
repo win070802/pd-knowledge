@@ -5,7 +5,7 @@ nixPkgs = ['imagemagick', 'tesseract', 'tesseract-language-vie', 'tesseract-lang
 cmds = ['npm ci']
 
 [phases.build]
-cmds = ['mkdir -p temp temp-images uploads', 'chmod +x run.sh']
+cmds = ['mkdir -p temp temp-images uploads']
 
 [start]
-cmd = './run.sh' 
+cmd = 'node scripts/migrate-production.js && node server.js' 

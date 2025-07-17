@@ -6,7 +6,7 @@
   },
   "deploy": {
     "numReplicas": 1,
-    "startCommand": "./run.sh",
+    "startCommand": "node scripts/migrate-production.js && node server.js",
     "healthcheckPath": "/simple-health",
     "restartPolicyType": "ON_FAILURE",
     "healthcheckTimeout": 120,

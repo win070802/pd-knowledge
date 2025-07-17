@@ -4,7 +4,7 @@
   buildCommand = "npm ci"
 
 [deploy]
-  startCommand = "./run.sh"
+  startCommand = "node scripts/migrate-production.js && node server.js"
   healthcheckEnabled = true
   healthcheckPath = "/simple-health"
   healthcheckTimeout = 120
