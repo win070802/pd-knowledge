@@ -70,8 +70,76 @@ app.get('/api', (req, res) => {
       '/api/health',
       '/api/documents',
       '/api/companies',
-      '/api/qa'
+      '/api/qa',
+      '/api/learn',
+      '/api/upload'
     ]
+  });
+});
+
+// API QA endpoint
+app.post('/api/qa/ask', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    message: 'API is in maintenance mode',
+    timestamp: new Date().toISOString(),
+    question: req.body.question || '',
+    answer: 'Hệ thống đang được bảo trì. Vui lòng thử lại sau.'
+  });
+});
+
+// API Learn endpoint
+app.post('/api/learn', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    message: 'API is in maintenance mode',
+    timestamp: new Date().toISOString(),
+    data: req.body,
+    result: 'Hệ thống đang được bảo trì. Vui lòng thử lại sau.'
+  });
+});
+
+// API Upload endpoint
+app.post('/api/upload', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    message: 'API is in maintenance mode',
+    timestamp: new Date().toISOString(),
+    result: 'Hệ thống đang được bảo trì. Vui lòng thử lại sau.'
+  });
+});
+
+// API Documents endpoint
+app.get('/api/documents', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    message: 'API is in maintenance mode',
+    timestamp: new Date().toISOString(),
+    documents: []
+  });
+});
+
+// API Companies endpoint
+app.get('/api/companies', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    message: 'API is in maintenance mode',
+    timestamp: new Date().toISOString(),
+    companies: []
+  });
+});
+
+// API Auth endpoints
+app.post('/api/auth/login', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    message: 'API is in maintenance mode',
+    timestamp: new Date().toISOString(),
+    token: 'maintenance-mode-token',
+    user: {
+      username: req.body.username || 'user',
+      role: 'user'
+    }
   });
 });
 
