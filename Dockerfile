@@ -45,11 +45,11 @@ RUN chmod -R 644 /usr/share/tesseract-ocr/*/tessdata/
 RUN mkdir -p temp temp-images uploads
 
 # Expose port
-EXPOSE ${PORT:-3000}
+EXPOSE ${PORT:-8080}
 
-# Health check
+# Health check - sử dụng wget thay vì node script
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:${PORT:-3000}/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) })"
+    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8080}/health || exit 1
 
 # Setup script to run before starting the application
 RUN echo '#!/bin/sh\nnode scripts/create-database.js && node scripts/migrate-production.js && node server.js' > /app/startup.sh && \
