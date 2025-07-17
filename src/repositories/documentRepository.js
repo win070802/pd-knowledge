@@ -5,8 +5,18 @@ class DocumentRepository {
     const client = await pool.connect();
     try {
       const result = await client.query(
-        'INSERT INTO documents (filename, original_name, file_path, file_size, content_text, company_id, category, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-        [documentData.filename, documentData.originalName, documentData.filePath, documentData.fileSize, documentData.content, documentData.companyId, documentData.category, documentData.metadata]
+        'INSERT INTO documents (filename, original_name, file_path, file_size, page_count, content_text, company_id, category, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+        [
+          documentData.filename,
+          documentData.original_name,
+          documentData.file_path,
+          documentData.file_size,
+          documentData.page_count,
+          documentData.content_text,
+          documentData.company_id,
+          documentData.category,
+          documentData.metadata
+        ]
       );
       return result.rows[0];
     } finally {

@@ -149,6 +149,10 @@ const uploadDocument = async (req, res) => {
 
     console.log(`🚀 Starting enhanced document upload: ${originalName}`);
 
+    // Debug log để kiểm tra giá trị file upload
+    console.log('DEBUG req.file:', req.file);
+    console.log('DEBUG fileName:', fileName, 'originalName:', originalName);
+
     // Upload to storage first to get company info
     const storageResult = await storageService.uploadFile(tempFilePath, fileName, originalName);
     const companyId = storageResult.company ? storageResult.company.id : null;
@@ -160,6 +164,9 @@ const uploadDocument = async (req, res) => {
       originalName, 
       companyId
     );
+
+    // Lấy số trang PDF (nếu có)
+    const pageCount = processingResult.pageCount || (processingResult.structureAnalysis && processingResult.structureAnalysis.pageCount) || null;
 
     // Check if document was rejected
     if (!processingResult.classification.accept) {
@@ -258,15 +265,17 @@ const uploadDocument = async (req, res) => {
     if (!documentToSave) {
       documentToSave = await db.createDocument({
         filename: fileName,
-        original_name: originalName,
+        original_name: originalName, // Đảm bảo truyền đúng tên trường
         file_path: finalStorageResult.path,
         file_size: fileSize,
+        page_count: pageCount,
         content_text: contentText,
         company_id: finalCompanyId,
         category: category,
         metadata: {
           uploadedAt: new Date().toISOString(),
           contentLength: contentText.length,
+          page_count: pageCount,
           processingMethod: processingResult.processingMethod,
           classification: processingResult.classification,
           duplicateAnalysis: processingResult.duplicateAnalysis,
@@ -278,7 +287,11 @@ const uploadDocument = async (req, res) => {
           canAnswerQuestions: processingResult.structureAnalysis.canAnswerQuestions,
           keyTerms: processingResult.structureAnalysis.keyTerms,
           mainTopics: processingResult.structureAnalysis.mainTopics,
-          contentDetectedCompany: finalCompany ? finalCompany.code : null
+          contentDetectedCompany: finalCompany ? finalCompany.code : null,
+          // Thêm structured metadata cho QA
+          sections: processingResult.structureAnalysis.sections || [],
+          logic: processingResult.structureAnalysis.logic || [],
+          conditions: processingResult.structureAnalysis.conditions || []
         }
       });
     }

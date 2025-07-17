@@ -212,8 +212,68 @@ TRÁLỜI:`;
   // Process questions with documents
   async processWithDocuments(question, relevantDocs, startTime) {
     try {
-      // Generate context from relevant documents
-      const context = this.generateContext(relevantDocs);
+      // Ưu tiên mapping structured metadata
+      let context = '';
+      relevantDocs.forEach((doc, index) => {
+        context += `\n[Tài liệu ${index + 1}: ${doc.original_name}]\n`;
+        if (doc.metadata) {
+          // Ưu tiên các trường metadata structured
+          if (doc.metadata.sections && doc.metadata.sections.length > 0) {
+            context += `Sections:\n`;
+            doc.metadata.sections.forEach((section, i) => {
+              context += `- ${section.title ? section.title + ': ' : ''}${section.content || ''}\n`;
+              if (section.logic) context += `  Logic: ${section.logic}\n`;
+              if (section.conditions) context += `  Điều kiện: ${Array.isArray(section.conditions) ? section.conditions.join('; ') : section.conditions}\n`;
+              if (section.references) context += `  Tham chiếu: ${Array.isArray(section.references) ? section.references.join('; ') : section.references}\n`;
+              if (section.tables) context += `  Bảng: ${JSON.stringify(section.tables)}\n`;
+              if (section.procedures) context += `  Quy trình: ${JSON.stringify(section.procedures)}\n`;
+            });
+          }
+          if (doc.metadata.procedures && doc.metadata.procedures.length > 0) {
+            context += `Procedures:\n`;
+            doc.metadata.procedures.forEach((proc, i) => {
+              context += `- Bước ${proc.step}: ${proc.description || ''} (${proc.details || ''})\n`;
+              if (proc.conditions) context += `  Điều kiện: ${Array.isArray(proc.conditions) ? proc.conditions.join('; ') : proc.conditions}\n`;
+            });
+          }
+          if (doc.metadata.logic && doc.metadata.logic.length > 0) {
+            context += `Logic đặc thù:\n`;
+            context += Array.isArray(doc.metadata.logic) ? doc.metadata.logic.join('\n') : doc.metadata.logic + '\n';
+          }
+          if (doc.metadata.conditions && doc.metadata.conditions.length > 0) {
+            context += `Điều kiện áp dụng:\n`;
+            context += Array.isArray(doc.metadata.conditions) ? doc.metadata.conditions.join('\n') : doc.metadata.conditions + '\n';
+          }
+          if (doc.metadata.tables && doc.metadata.tables.length > 0) {
+            context += `Bảng biểu:\n`;
+            context += JSON.stringify(doc.metadata.tables) + '\n';
+          }
+          if (doc.metadata.controls && doc.metadata.controls.length > 0) {
+            context += `Biện pháp kiểm soát:\n`;
+            context += Array.isArray(doc.metadata.controls) ? doc.metadata.controls.join('\n') : doc.metadata.controls + '\n';
+          }
+          if (doc.metadata.references && doc.metadata.references.length > 0) {
+            context += `Tham chiếu liên quan:\n`;
+            context += Array.isArray(doc.metadata.references) ? doc.metadata.references.join('\n') : doc.metadata.references + '\n';
+          }
+          if (doc.metadata.glossary && doc.metadata.glossary.length > 0) {
+            context += `Định nghĩa thuật ngữ:\n`;
+            context += Array.isArray(doc.metadata.glossary) ? doc.metadata.glossary.join('\n') : doc.metadata.glossary + '\n';
+          }
+          if (doc.metadata.roles && doc.metadata.roles.length > 0) {
+            context += `Vai trò, trách nhiệm:\n`;
+            context += Array.isArray(doc.metadata.roles) ? doc.metadata.roles.join('\n') : doc.metadata.roles + '\n';
+          }
+          if (doc.metadata.responsibilities && doc.metadata.responsibilities.length > 0) {
+            context += `Trách nhiệm:\n`;
+            context += Array.isArray(doc.metadata.responsibilities) ? doc.metadata.responsibilities.join('\n') : doc.metadata.responsibilities + '\n';
+          }
+        }
+        // Fallback: nếu metadata không đủ, lấy content_text
+        if ((!doc.metadata || Object.keys(doc.metadata).length === 0) && doc.content_text) {
+          context += doc.content_text.substring(0, 2000) + '\n';
+        }
+      });
       
       // Create enhanced prompt for process-oriented answers
       const prompt = `

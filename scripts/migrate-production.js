@@ -135,6 +135,16 @@ async function migrateDatabase() {
     `);
     console.log('✅ Knowledge base table ensured');
     
+    // Đảm bảo cột metadata tồn tại trong knowledge_base (nếu migrate từ schema cũ)
+    const knowledgeBaseColumns = await client.query(`
+      SELECT column_name FROM information_schema.columns WHERE table_name = 'knowledge_base'`);
+    const kbCols = knowledgeBaseColumns.rows.map(row => row.column_name);
+    if (!kbCols.includes('metadata')) {
+      console.log('📝 Adding missing column: metadata to knowledge_base');
+      await client.query(`ALTER TABLE knowledge_base ADD COLUMN metadata JSONB`);
+      console.log('✅ Added column: metadata');
+    }
+    
     // =====================================================
     // 2. CHECK AND ADD MISSING COLUMNS TO EXISTING TABLES
     // =====================================================
@@ -158,6 +168,7 @@ async function migrateDatabase() {
       { name: 'original_name', type: 'VARCHAR(255) NOT NULL' },
       { name: 'file_path', type: 'VARCHAR(500) NOT NULL' },
       { name: 'file_size', type: 'INTEGER NOT NULL' },
+      { name: 'page_count', type: 'INTEGER' }, // Thêm dòng này
       { name: 'content_text', type: 'TEXT' },
       { name: 'company_id', type: 'INTEGER REFERENCES companies(id)' },
       { name: 'category', type: 'VARCHAR(100)' },
@@ -320,4 +331,4 @@ migrateDatabase()
   .catch(error => {
     console.error('💥 Migration failed:', error);
     process.exit(1);
-  });
+  }); 
