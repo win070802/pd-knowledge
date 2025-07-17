@@ -18,7 +18,8 @@ RUN apk add --no-cache \
     tesseract-ocr-data-eng \
     ghostscript \
     poppler-utils \
-    python3
+    python3 \
+    curl
 
 # Create directories
 RUN mkdir -p /usr/share/tesseract-ocr/4/tessdata \
@@ -42,6 +43,10 @@ RUN chmod -R 644 /usr/share/tesseract-ocr/*/tessdata/ && \
 
 # Expose port
 EXPOSE 8080
+
+# Add Docker health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8080/ || exit 1
 
 # Create startup script
 RUN echo '#!/bin/sh\nnode scripts/migrate-production.js && node server.js' > /app/startup.sh && \
