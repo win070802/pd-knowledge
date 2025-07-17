@@ -3,7 +3,7 @@
   buildCommand = "npm install"
 
 [deploy]
-  startCommand = "node server-minimal.js"
+  startCommand = "node server.js"
   # Disable health check completely
   healthcheckEnabled = false
   # healthcheckPath = "/"
@@ -12,5 +12,5 @@
 [env]
   NODE_ENV = "production"
   PORT = "8080"
-  SSL_ENABLED = "false"
-  SSL_REJECT_UNAUTHORIZED = "false" 
+  SSL_ENABLED = "true"
+  SSL_REJECT_UNAUTHORIZED = "true" 
