@@ -7,6 +7,116 @@ class GeminiAiService {
     this.model = this.genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
   }
 
+  // Phát hiện tham chiếu trong câu hỏi dựa trên AI
+  async detectReferences(question, history = [], context = {}) {
+    try {
+      console.log(`🧠 Phân tích tham chiếu thông minh cho câu hỏi: "${question}"`);
+      
+      // Nếu không có lịch sử, không thể có tham chiếu
+      if (!history || history.length <= 1) {
+        console.log(`⚠️ Không có lịch sử hội thoại, không thể có tham chiếu`);
+        return { 
+          hasReference: false, 
+          resolvedQuestion: question,
+          confidence: 100
+        };
+      }
+
+      // Xây dựng lịch sử hội thoại cho prompt
+      let conversationHistory = '';
+      // Chỉ lấy 5 tin nhắn gần nhất để tiết kiệm token
+      const recentHistory = history.slice(-5);
+      
+      for (const msg of recentHistory) {
+        const role = msg.message_type === 'question' ? 'Người dùng' : 'Trợ lý';
+        conversationHistory += `${role}: ${msg.content}\n`;
+        
+        // Nếu là câu trả lời và có tài liệu liên quan, thêm thông tin
+        if (msg.message_type === 'answer' && msg.relevant_documents && msg.relevant_documents.length > 0) {
+          conversationHistory += `[Tài liệu đề cập: ${msg.relevant_documents.map(doc => doc.name || 'Không có tên').join(', ')}]\n`;
+        }
+      }
+
+      // Tạo prompt cho phân tích tham chiếu
+      const prompt = `Bạn là một hệ thống phân tích ngữ cảnh hội thoại chuyên nghiệp. Nhiệm vụ của bạn là phân tích xem câu hỏi hiện tại có chứa tham chiếu đến tài liệu hoặc thông tin từ các tin nhắn trước đó không.
+
+LỊCH SỬ HỘI THOẠI GẦN ĐÂY:
+${conversationHistory}
+
+CÂU HỎI HIỆN TẠI: "${question}"
+
+Hãy phân tích:
+1. Câu hỏi này có chứa tham chiếu ngầm hoặc rõ ràng đến tài liệu đã đề cập trước đó không?
+2. Nếu có, tham chiếu đó là gì và liên quan đến tài liệu nào?
+3. Nếu có thể, hãy cung cấp câu hỏi đã giải quyết tham chiếu (thay thế từ "này", "đó", "tài liệu đó" bằng tên tài liệu cụ thể)
+
+QUAN TRỌNG:
+- Tham chiếu có thể là từ như "tài liệu đó", "file này", "quy định đó", "sơ đồ này", hoặc chỉ đơn giản là "nó"
+- Nếu câu hỏi đề cập đến phòng ban hoặc công ty (VD: "Ban công nghệ thông tin có mấy người"), đây KHÔNG phải là tham chiếu
+- Nếu câu hỏi có từ như "tài liệu số 1", "file thứ hai", đó LÀ tham chiếu đến thứ tự tài liệu trong câu trả lời trước
+- Câu hỏi ngắn như "chi tiết hơn" hoặc "nói thêm" thường là tham chiếu ngầm đến chủ đề trước đó
+
+Trả về kết quả dạng JSON với cấu trúc:
+{
+  "hasReference": boolean,
+  "referenceType": "direct" | "indirect" | "none",
+  "referencedDocument": "tên tài liệu hoặc null",
+  "resolvedQuestion": "câu hỏi đã giải quyết tham chiếu hoặc câu hỏi gốc",
+  "confidence": 0-100,
+  "explanation": "giải thích ngắn gọn về phân tích"
+}
+
+LƯU Ý: Chỉ trả về JSON, không có nội dung khác.`;
+
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      let analysisText = response.text();
+      
+      // Đảm bảo kết quả là JSON
+      try {
+        // Loại bỏ các ký tự không phải JSON nếu có
+        if (analysisText.includes('```json')) {
+          analysisText = analysisText.split('```json')[1].split('```')[0].trim();
+        }
+        const analysis = JSON.parse(analysisText);
+        
+        console.log(`✅ Phân tích tham chiếu hoàn thành: ${analysis.hasReference ? 'Có tham chiếu' : 'Không có tham chiếu'}`);
+        console.log(`   - Loại tham chiếu: ${analysis.referenceType}`);
+        console.log(`   - Độ tin cậy: ${analysis.confidence}%`);
+        console.log(`   - Giải thích: ${analysis.explanation}`);
+        
+        return {
+          hasReference: analysis.hasReference,
+          referenceType: analysis.referenceType,
+          referencedDocument: analysis.referencedDocument,
+          resolvedQuestion: analysis.resolvedQuestion || question,
+          confidence: analysis.confidence,
+          explanation: analysis.explanation
+        };
+      } catch (parseError) {
+        console.error('Lỗi phân tích kết quả JSON:', parseError);
+        console.log('Phản hồi gốc:', analysisText);
+        
+        // Trả về kết quả mặc định nếu không thể phân tích JSON
+        return {
+          hasReference: false,
+          resolvedQuestion: question,
+          confidence: 50,
+          explanation: "Không thể phân tích kết quả AI"
+        };
+      }
+    } catch (error) {
+      console.error('Error in detectReferences:', error);
+      // Trả về an toàn nếu có lỗi
+      return { 
+        hasReference: false, 
+        resolvedQuestion: question,
+        confidence: 50,
+        explanation: "Lỗi khi phân tích tham chiếu"
+      };
+    }
+  }
+
   // Handle general chatbot questions without documents
   async handleGeneralChatbotQuestion(question) {
     try {

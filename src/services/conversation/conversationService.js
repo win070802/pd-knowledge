@@ -214,15 +214,7 @@ class ConversationService {
   }
 
   /**
-   * Giải quyết các tham chiếu trong câu hỏi người dùng
-   * 
-   * Thuật toán xử lý:
-   * 1. Tìm tài liệu từ ngữ cảnh (context) của phiên hội thoại hoặc lịch sử hội thoại
-   * 2. Phân tích câu hỏi để tìm các tham chiếu trực tiếp ("tài liệu này", "sơ đồ đó"...)
-   * 3. Phát hiện tham chiếu ngầm (câu ngắn, chi tiết về nội dung đã được đề cập)
-   * 4. Phân tích từ khóa chủ đề để phát hiện người dùng đang nói về tài liệu cụ thể
-   * 5. Chấm điểm mức độ phù hợp của từng tài liệu với câu hỏi
-   * 6. Chọn tài liệu phù hợp nhất và thay thế các tham chiếu trong câu hỏi
+   * Giải quyết các tham chiếu trong câu hỏi người dùng sử dụng AI
    * 
    * @param {string} sessionId - ID phiên hội thoại
    * @param {string} question - Câu hỏi của người dùng
@@ -230,6 +222,8 @@ class ConversationService {
    */
   async resolveReferences(sessionId, question) {
     try {
+      console.log(`🧠 Phân tích tham chiếu cho câu hỏi: "${question}"`);
+      
       // Get session context directly without creating new session
       const sessionQuery = await pool.query(
         'SELECT context FROM conversations WHERE session_id = $1 AND is_active = true',
@@ -237,275 +231,60 @@ class ConversationService {
       );
       
       const context = sessionQuery.rows.length > 0 ? sessionQuery.rows[0].context : {};
-      const history = await this.getConversationHistory(sessionId, 15); // Tăng số lượng tin nhắn lấy từ lịch sử
-
+      const history = await this.getConversationHistory(sessionId, 10); // Lấy lịch sử hội thoại
+      
       // Kiểm tra nếu là câu hỏi đầu tiên trong phiên hội thoại, không xem là tham chiếu
       if (history.length <= 1) {
         console.log(`⚠️ Phiên hội thoại mới hoặc không có lịch sử, không coi là tham chiếu`);
         return { resolvedQuestion: question, hasReference: false };
       }
-
-      // Mở rộng danh sách từ khóa tham chiếu
-      const referenceKeywords = [
-        'tài liệu đó', 'document đó', 'file đó', 'quy định đó',
-        'tài liệu này', 'document này', 'file này', 'quy định này',
-        'tài liệu trước', 'file trước', 'cái đó', 'cái này',
-        'nó', 'đó', 'này', 'chi tiết', 'thông tin', 'nội dung'
-      ];
-
-      // Từ khóa dễ nhầm lẫn - cần xét trong ngữ cảnh cụ thể
-      const contextualKeywords = [
-        'sơ đồ', 'tài liệu', 'mô tả', 'phân tích', 'trên',
-        'tóm tắt', 'hướng dẫn', 'quy trình', 'quy định'
-      ];
-
-      const questionLower = question.toLowerCase();
       
-      // Kiểm tra các từ khóa chỉ ra rằng đây là truy vấn danh sách, không phải tham chiếu
-      const listQueryKeywords = ['danh sách', 'liệt kê', 'có những', 'có mấy', 'có bao nhiêu'];
-      const isListQuery = listQueryKeywords.some(keyword => questionLower.includes(keyword));
+      // Sử dụng GeminiAiService để phân tích tham chiếu
+      const GeminiAiService = require('../ai/geminiAiService');
+      const aiService = new GeminiAiService();
       
-      // Kiểm tra nếu câu hỏi có chứa tên tài liệu cụ thể
-      const hasSpecificDocumentName = questionLower.includes('.pdf') || questionLower.includes('.doc') || 
-                                     questionLower.includes('.xlsx') || questionLower.includes('.ppt');
+      // Gọi phương thức AI để phân tích tham chiếu
+      const analysis = await aiService.detectReferences(question, history, context);
       
-      // Lấy danh sách công ty từ database
-      const companiesQuery = await pool.query('SELECT code, full_name FROM companies');
-      const companies = companiesQuery.rows || [];
-      
-      // Tạo danh sách từ khóa công ty từ database
-      const companyKeywords = [];
-      companies.forEach(company => {
-        if (company.code) companyKeywords.push(company.code.toLowerCase());
-        if (company.full_name) {
-          // Thêm cả tên đầy đủ và các phần của tên
-          companyKeywords.push(company.full_name.toLowerCase());
-          const nameParts = company.full_name.toLowerCase().split(' ');
-          nameParts.forEach(part => {
-            if (part.length > 2) companyKeywords.push(part);
-          });
-        }
-      });
-      
-      // Thêm một số từ khóa mặc định cho các công ty phổ biến
-      const defaultCompanyKeywords = ['phát đạt', 'phat dat', 'holding', 'invest'];
-      defaultCompanyKeywords.forEach(keyword => {
-        if (!companyKeywords.includes(keyword)) {
-          companyKeywords.push(keyword);
-        }
-      });
-      
-      // Kiểm tra xem câu hỏi có chứa từ khóa công ty không
-      const hasCompanyKeyword = companyKeywords.some(keyword => questionLower.includes(keyword));
-      
-      // Nếu là truy vấn danh sách kết hợp với tên công ty hoặc phòng ban, KHÔNG coi là tham chiếu
-      if (isListQuery) {
-        console.log(`⚠️ Câu hỏi là truy vấn danh sách, không coi là tham chiếu`);
-        return { resolvedQuestion: question, hasReference: false };
-      }
-      
-      // Nếu câu hỏi chứa tên tài liệu cụ thể, KHÔNG coi là tham chiếu
-      if (hasSpecificDocumentName) {
-        return { resolvedQuestion: question, hasReference: false };
-      }
-      
-      // Kiểm tra câu hỏi về phòng ban
-      const departmentKeywords = ['ban', 'phòng', 'bộ phận', 'team', 'nhóm', 'đội'];
-      const isDepartmentQuestion = departmentKeywords.some(keyword => 
-        questionLower.includes(keyword + ' ') || // Đảm bảo "ban" là từ riêng, không phải phần của từ khác
-        questionLower.startsWith(keyword + ' ')
-      );
-      
-      if (isDepartmentQuestion) {
-        console.log(`⚠️ Câu hỏi về phòng ban, không coi là tham chiếu`);
-        return { resolvedQuestion: question, hasReference: false };
-      }
-      
-      // Kiểm tra nếu câu hỏi là câu hỏi chung không liên quan đến tài liệu
-      const generalQuestionPatterns = [
-        'việt nam', 'thế giới', 'là gì', 'định nghĩa', 'khái niệm',
-        'bao nhiêu người', 'dân số', 'diện tích', 'thủ đô',
-        'tổng thống', 'tại sao', 'vì sao', 'lý do', 'nguyên nhân'
-      ];
-      
-      const isGeneralQuestion = generalQuestionPatterns.some(pattern => questionLower.includes(pattern));
-      
-      // Nếu là câu hỏi chung không liên quan đến tài liệu, KHÔNG coi là tham chiếu
-      if (isGeneralQuestion && !hasCompanyKeyword) {
-        return { resolvedQuestion: question, hasReference: false };
-      }
-      
-      // Phân tích tài liệu từ lịch sử cuộc trò chuyện
-      let lastDocumentsInHistory = [];
-      let lastMentionedDocName = '';
-      
-      if (history.length > 0) {
-        // Tìm tài liệu trong lịch sử trả lời
-        const lastMessages = history.slice().reverse();
-        
-        // Lưu trữ danh sách tài liệu được đề cập trong cả câu hỏi và trả lời
-        for (const msg of lastMessages) {
-          // Kiểm tra tin nhắn trả lời
-          if (msg.message_type === 'answer' && msg.relevant_documents && 
-              Array.isArray(msg.relevant_documents) && msg.relevant_documents.length > 0) {
-            lastDocumentsInHistory = msg.relevant_documents;
-            
-            // Nếu câu trả lời có nhắc đến tên tài liệu cụ thể
-            const content = msg.content.toLowerCase();
-            for (const doc of msg.relevant_documents) {
-              if (doc.name && content.includes(doc.name.toLowerCase())) {
-                lastMentionedDocName = doc.name;
-                break;
-              }
-            }
-            
-            if (lastMentionedDocName || lastDocumentsInHistory.length > 0) break;
+      if (!analysis.hasReference) {
+        console.log(`🔍 AI không phát hiện tham chiếu trong câu hỏi`);
+        return {
+          resolvedQuestion: question,
+          hasReference: false,
+          analysis: {
+            confidence: analysis.confidence,
+            explanation: analysis.explanation
           }
-
-          // Kiểm tra tin nhắn câu hỏi để tìm dấu hiệu của việc nói về tài liệu
-          if (msg.message_type === 'question') {
-            const contentLower = msg.content.toLowerCase();
-            
-            // Nếu câu hỏi trước đó có nói về tài liệu cụ thể
-            if (contentLower.includes('tài liệu') || 
-                contentLower.includes('file') || 
-                contentLower.includes('document') ||
-                contentLower.includes('sơ đồ') ||
-                contentLower.includes('quy định')) {
-              // Kiểm tra câu trả lời ngay sau câu hỏi này
-              const answerIndex = lastMessages.findIndex(m => m.id === msg.id) - 1;
-              if (answerIndex >= 0 && lastMessages[answerIndex].message_type === 'answer') {
-                const answer = lastMessages[answerIndex];
-                if (answer.relevant_documents && Array.isArray(answer.relevant_documents) && 
-                    answer.relevant_documents.length > 0) {
-                  if (lastDocumentsInHistory.length === 0) {
-                    lastDocumentsInHistory = answer.relevant_documents;
-                  }
-                }
-              }
-            }
+        };
+      }
+      
+      console.log(`🔍 AI phát hiện tham chiếu trong câu hỏi (độ tin cậy: ${analysis.confidence}%)`);
+      console.log(`   - Giải thích: ${analysis.explanation}`);
+      
+      // Nếu AI đã giải quyết tham chiếu, sử dụng kết quả đó
+      if (analysis.resolvedQuestion && analysis.resolvedQuestion !== question) {
+        console.log(`✅ Câu hỏi đã giải quyết tham chiếu: "${analysis.resolvedQuestion}"`);
+        return {
+          resolvedQuestion: analysis.resolvedQuestion,
+          hasReference: true,
+          referencedDocument: analysis.referencedDocument,
+          analysis: {
+            confidence: analysis.confidence,
+            explanation: analysis.explanation
           }
-        }
-      }
-
-      // Xác định xem câu hỏi có tham chiếu đến tài liệu không
-      const hasExplicitReference = referenceKeywords.some(keyword => 
-        questionLower.includes(keyword)
-      );
-
-      // Xác định tham chiếu ngữ cảnh (phải kết hợp với các điều kiện khác)
-      let hasContextualReference = false;
-      if (lastDocumentsInHistory.length > 0) {
-        hasContextualReference = contextualKeywords.some(keyword => 
-          questionLower.includes(keyword)
-        );
+        };
       }
       
-      // Xác định xem câu hỏi có phải là tham chiếu ngầm không
-      // 1. Nếu có tài liệu trước đó và câu hỏi hiện tại ngắn
-      // 2. Hoặc chứa từ khóa liên quan đến nội dung tài liệu
-      // 3. Hoặc là câu hỏi tiếp theo sau khi đã hiển thị danh sách tài liệu
-      const hasImplicitReference = lastDocumentsInHistory.length > 0 && (
-        (question.length < 50 && 
-         (questionLower.includes('chi tiết') ||
-          questionLower.includes('tóm tắt') ||
-          questionLower.includes('nội dung') ||
-          questionLower.startsWith('trong đó'))) ||
-        (history.length > 1 && 
-         history[history.length-2].message_type === 'answer' &&
-         history[history.length-2].content.includes('Các quy định và quy trình') &&
-         questionLower.startsWith('chi tiết'))
-      );
-
-      // Thêm logic nhận diện khi người dùng hỏi về một tài liệu cụ thể 
-      // mà không dùng tham chiếu trực tiếp
-      let hasTopicReference = false;
-      let topicReferenceScore = 0;
-      
-      if (lastDocumentsInHistory.length > 0) {
-        for (const doc of lastDocumentsInHistory) {
-          if (!doc.name) continue;
-          
-          // Tách tên tài liệu thành các từ khóa
-          const docNameLower = doc.name.toLowerCase();
-          const keyPhrases = docNameLower.split(/[\s\-\.\_\(\)]+/)
-            .filter(part => part.length > 3)
-            .map(part => part.replace(/[^a-z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/g, ''))
-            .filter(part => part.length > 3);
-          
-          // Kiểm tra xem câu hỏi có chứa các từ khóa quan trọng trong tên tài liệu
-          const topicMatches = keyPhrases.filter(phrase => questionLower.includes(phrase));
-          
-          let score = 0;
-          
-          // Nếu câu hỏi chứa ít nhất 1 từ khóa quan trọng từ tên tài liệu
-          if (topicMatches.length > 0) {
-            // Nếu tài liệu có từ khóa đặc biệt và câu hỏi cũng nhắc đến nó
-            if ((docNameLower.includes('sơ đồ') && questionLower.includes('sơ đồ'))) {
-              score += 40;
-            }
-            if ((docNameLower.includes('quy trình') && questionLower.includes('quy trình'))) {
-              score += 40;
-            }
-            if ((docNameLower.includes('hướng dẫn') && questionLower.includes('hướng dẫn'))) {
-              score += 40;
-            }
-            if ((docNameLower.includes('quy định') && questionLower.includes('quy định'))) {
-              score += 40;
-            }
-            if ((docNameLower.includes('phap che') || docNameLower.includes('pháp chế')) && 
-                (questionLower.includes('phap che') || questionLower.includes('pháp chế'))) {
-              score += 50;
-            }
-            
-            // Điểm cho số lượng từ khóa khớp
-            score += topicMatches.length * 10;
-          }
-          
-          if (score > topicReferenceScore) {
-            topicReferenceScore = score;
-          }
-        }
-        
-        // Chỉ coi là tham chiếu chủ đề nếu điểm đủ cao
-        hasTopicReference = topicReferenceScore >= 30;
-      }
-
-      // Loại trừ một số trường hợp câu hỏi đặc biệt không phải tham chiếu
-      const nonReferencePatterns = [
-        'có bao nhiêu', 'bao nhiêu', 'có mấy', 'mấy người', 
-        'có ai', 'ai là', 'là ai', 'ở đâu', 'khi nào',
-        'tại sao', 'vì sao', 'có phải', 'đúng không',
-        'danh sách', 'liệt kê'
-      ];
-      
-      // Nếu câu hỏi chứa các mẫu không tham chiếu và không có tham chiếu rõ ràng
-      const containsNonReferencePattern = nonReferencePatterns.some(pattern => 
-        questionLower.includes(pattern)
-      );
-      
-      if (containsNonReferencePattern && !hasExplicitReference && topicReferenceScore < 50) {
-        return { resolvedQuestion: question, hasReference: false };
-      }
-
-      const hasReference = hasExplicitReference || hasImplicitReference || hasTopicReference;
-
-      // Nếu không có tham chiếu, trả về câu hỏi nguyên bản
-      if (!hasReference) {
-        return { resolvedQuestion: question, hasReference: false };
-      }
-
-      // Tìm tài liệu liên quan gần nhất
+      // Nếu AI phát hiện tham chiếu nhưng không thể giải quyết
+      // Tìm tài liệu liên quan trong lịch sử
       let referencedDocuments = [];
       
       // Kiểm tra ngữ cảnh phiên trước
       if (context.lastRelevantDocuments && context.lastRelevantDocuments.length > 0) {
         referencedDocuments = context.lastRelevantDocuments;
-      } else if (lastDocumentsInHistory.length > 0) {
-        referencedDocuments = lastDocumentsInHistory;
       } else {
         // Tìm trong tin nhắn gần đây
-        for (const message of history.reverse()) {
+        for (const message of history.slice().reverse()) {
           if (message.relevant_documents && Array.isArray(message.relevant_documents)) {
             if (message.relevant_documents.length > 0) {
               referencedDocuments = message.relevant_documents;
@@ -514,163 +293,53 @@ class ConversationService {
           }
         }
       }
-
+      
+      // Nếu không tìm thấy tài liệu nào
       if (referencedDocuments.length === 0) {
         return { 
           resolvedQuestion: question, 
           hasReference: true,
-          error: 'Không tìm thấy tài liệu nào được đề cập trong cuộc hội thoại trước đó.'
+          error: 'Không tìm thấy tài liệu nào được đề cập trong cuộc hội thoại trước đó.',
+          analysis: {
+            confidence: analysis.confidence,
+            explanation: analysis.explanation
+          }
         };
       }
       
-      // Tìm tài liệu phù hợp nhất với nội dung câu hỏi
-      let matchedDocument = null;
-      let highestMatchScore = 0;
-      
-      // Các bước chấm điểm mức độ phù hợp của tài liệu:
-      // 1. Chấm điểm cho tên tài liệu hoàn chỉnh
-      // 2. Chấm điểm cho từng từ khóa quan trọng trong tên tài liệu
-      // 3. Chấm điểm cho các loại tài liệu đặc biệt như sơ đồ, quy trình
-      // 4. Chấm điểm cho các cặp từ khóa đặc biệt (vay vốn, pháp chế...)
-      // 5. Chấm điểm cho tài liệu được nhắc đến trong câu trả lời gần nhất
-      for (const doc of referencedDocuments) {
-        if (!doc.name) continue;
+      // Nếu chỉ có một tài liệu, sử dụng nó
+      if (referencedDocuments.length === 1) {
+        const resolvedQuestion = `thông tin về tài liệu "${referencedDocuments[0].name}": ${question}`;
         
-        const docNameLower = doc.name.toLowerCase();
-        let matchScore = 0;
+        console.log(`🔗 Tham chiếu đến tài liệu: "${referencedDocuments[0].name}"`);
+        console.log(`🔗 Câu hỏi giải quyết: "${resolvedQuestion}"`);
         
-        // Tách tên tài liệu và câu hỏi thành các từ khóa
-        const docNameParts = docNameLower.split(/[\s\-\.\_\(\)]+/)
-          .filter(part => part.length > 3)
-          .map(part => part.replace(/[^a-z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/g, ''))
-          .filter(part => part.length > 3);
-          
-        // Kiểm tra tên đầy đủ
-        if (questionLower.includes(docNameLower)) {
-          matchScore += 100;
-        }
-        
-        // Kiểm tra từng từ quan trọng trong tên tài liệu
-        for (const part of docNameParts) {
-          if (part.length > 3 && questionLower.includes(part)) {
-            matchScore += 10;
+        return {
+          resolvedQuestion,
+          hasReference: true,
+          referencedDocuments: [referencedDocuments[0]],
+          analysis: {
+            confidence: analysis.confidence,
+            explanation: analysis.explanation
           }
-        }
-        
-        // Kiểm tra các loại tài liệu đặc biệt
-        if ((docNameLower.includes('sơ đồ') && questionLower.includes('sơ đồ'))) {
-          matchScore += 50;
-        }
-        if ((docNameLower.includes('quy trình') && questionLower.includes('quy trình'))) {
-          matchScore += 50;
-        }
-        if ((docNameLower.includes('hướng dẫn') && questionLower.includes('hướng dẫn'))) {
-          matchScore += 50;
-        }
-        if ((docNameLower.includes('quy định') && questionLower.includes('quy định'))) {
-          matchScore += 50;
-        }
-        if ((docNameLower.includes('ban phap che') || docNameLower.includes('pháp chế')) && 
-            (questionLower.includes('phap che') || questionLower.includes('pháp chế'))) {
-          matchScore += 50;
-        }
-        
-        // Kiểm tra các cặp từ khóa đặc biệt
-        const keywordPairs = [
-          { doc: 'vay von', question: 'vay vốn', score: 70 },
-          { doc: 'vay vốn', question: 'vay vốn', score: 70 },
-          { doc: 'phap che', question: 'pháp chế', score: 70 },
-          { doc: 'pháp chế', question: 'phap che', score: 70 },
-          { doc: 'chuc nang', question: 'chức năng', score: 60 },
-          { doc: 'chức năng', question: 'chuc nang', score: 60 },
-          { doc: 'so do', question: 'sơ đồ', score: 60 },
-          { doc: 'sơ đồ', question: 'so do', score: 60 }
-        ];
-        
-        // Tìm các cặp từ khóa đặc biệt
-        for (const pair of keywordPairs) {
-          if (docNameLower.includes(pair.doc) && questionLower.includes(pair.question)) {
-            matchScore += pair.score;
-          }
-        }
-
-        // Kiểm tra các trường hợp đặc biệt
-        if ((docNameLower.includes('quy-trinh-vay-von') || docNameLower.includes('vay von') || docNameLower.includes('vay-von')) && 
-            (questionLower.includes('vay vốn') || questionLower.includes('vay von'))) {
-          matchScore += 80;  // Điểm cao cho sự trùng khớp này
-        }
-        
-        // Nếu tài liệu này đã được nhắc đến trong câu trả lời gần nhất
-        if (lastMentionedDocName === doc.name) {
-          matchScore += 30;
-        }
-        
-        console.log(`🔍 Đánh giá tài liệu "${doc.name}": ${matchScore} điểm`);
-        
-        if (matchScore > highestMatchScore) {
-          highestMatchScore = matchScore;
-          matchedDocument = doc;
-        }
+        };
       }
-
-      // Xây dựng câu hỏi đã giải quyết tham chiếu
-      let resolvedQuestion = question;
       
-      if (matchedDocument && highestMatchScore > 0) {
-        // Nếu đã xác định được tài liệu cụ thể
-        referenceKeywords.forEach(keyword => {
-          const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
-          resolvedQuestion = resolvedQuestion.replace(regex, `tài liệu "${matchedDocument.name}"`);
-        });
-        
-        // Nếu câu hỏi chưa có sự thay đổi và có vẻ là tham chiếu ngầm
-        if (resolvedQuestion === question && hasImplicitReference) {
-          if (question.length < 30 || 
-              questionLower.includes('chi tiết') || 
-              questionLower.includes('tóm tắt')) {
-            resolvedQuestion = `chi tiết về tài liệu "${matchedDocument.name}": ${question}`;
-          }
-        }
-      } else if (referencedDocuments.length === 1) {
-        // Nếu chỉ có một tài liệu trong ngữ cảnh
-        const doc = referencedDocuments[0];
-        referenceKeywords.forEach(keyword => {
-          const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
-          resolvedQuestion = resolvedQuestion.replace(regex, `tài liệu "${doc.name}"`);
-        });
-        
-        // Xử lý trường hợp người dùng hỏi ngắn gọn
-        if (resolvedQuestion === question && hasImplicitReference) {
-          if (question.length < 30 || 
-              questionLower.includes('chi tiết') || 
-              questionLower.includes('tóm tắt')) {
-            resolvedQuestion = `chi tiết về tài liệu "${doc.name}": ${question}`;
-          }
-        }
-      } else {
-        // Trường hợp nhiều tài liệu
-        if (hasImplicitReference && question.length < 30) {
-          // Chọn tài liệu đầu tiên nếu câu hỏi quá ngắn
-          const doc = referencedDocuments[0];
-          resolvedQuestion = `chi tiết về tài liệu "${doc.name}": ${question}`;
-        } else if (hasExplicitReference) {
-          // Dùng tài liệu đầu tiên nếu không có thông tin cụ thể hơn
-          const doc = referencedDocuments[0];
-          referenceKeywords.forEach(keyword => {
-            const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
-            resolvedQuestion = resolvedQuestion.replace(regex, `tài liệu "${doc.name}"`);
-          });
-        }
-      }
-
-      console.log(`🔗 Reference resolved: "${question}" → "${resolvedQuestion}" (match score: ${highestMatchScore})`);
+      // Nếu có nhiều tài liệu, cần phân tích thêm
+      // Sử dụng tài liệu gần nhất trong lịch sử
+      const resolvedQuestion = `thông tin về tài liệu "${referencedDocuments[0].name}": ${question}`;
+      
+      console.log(`🔗 Tham chiếu đến tài liệu gần nhất: "${referencedDocuments[0].name}"`);
+      console.log(`🔗 Câu hỏi giải quyết: "${resolvedQuestion}"`);
       
       return {
         resolvedQuestion,
         hasReference: true,
-        referencedDocuments: matchedDocument ? [matchedDocument] : referencedDocuments,
-        originalQuestion: question,
-        matchScore: highestMatchScore
+        referencedDocuments: [referencedDocuments[0]],
+        analysis: {
+          confidence: analysis.confidence,
+          explanation: analysis.explanation
+        }
       };
 
     } catch (error) {

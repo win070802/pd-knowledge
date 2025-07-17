@@ -3,6 +3,8 @@ service-account-key.json
 
 # Environment variables
 .env
+.env.*
+!.env.example
 
 # Uploads and temp files
 uploads/
@@ -40,6 +42,10 @@ test/
 *.test.js
 jest.config.js
 
+# Test scripts
+test-*.js
+scripts/test-*.js
+
 # Build outputs
 dist/
 build/
@@ -58,3 +64,7 @@ PDH-*.pdf
 
 # Vision service demo
 vision-ocr-service-demo.js
+
+# Backup files
+*.backup
+*-backup.*

@@ -64,7 +64,8 @@ const askQuestion = async (req, res) => {
       
       await conversationService.saveMessage(actualSessionId, 'answer', answer, [], { 
         hasReferenceError: true,
-        originalQuestion: question.trim()
+        originalQuestion: question.trim(),
+        referenceAnalysis: referenceResolution.analysis || {}
       });
 
       return res.json({
@@ -77,7 +78,8 @@ const askQuestion = async (req, res) => {
         contextInfo: {
           hasReference: referenceResolution.hasReference,
           resolved: false,
-          error: referenceResolution.error
+          error: referenceResolution.error,
+          referenceAnalysis: referenceResolution.analysis || {}
         }
       });
     }
@@ -85,6 +87,14 @@ const askQuestion = async (req, res) => {
     // Use resolved question for processing
     const processQuestion = referenceResolution.resolvedQuestion;
     console.log(`🔗 Using question: "${processQuestion}"`);
+    
+    // Ghi log thông tin phân tích tham chiếu nếu có
+    if (referenceResolution.hasReference && referenceResolution.analysis) {
+      console.log(`🔍 Phân tích tham chiếu:`);
+      console.log(`   - Loại tham chiếu: ${referenceResolution.analysis.referenceType || 'N/A'}`);
+      console.log(`   - Độ tin cậy: ${referenceResolution.analysis.confidence || 0}%`);
+      console.log(`   - Giải thích: ${referenceResolution.analysis.explanation || 'N/A'}`);
+    }
 
     // Phân tích câu hỏi để xác định intent, chủ đề và nguồn dữ liệu
     const questionAnalysis = await questionAnalysisService.analyzeQuestion(processQuestion, actualSessionId);
@@ -154,7 +164,8 @@ const askQuestion = async (req, res) => {
       resolvedQuestion: processQuestion,
       hasReference: referenceResolution.hasReference,
       analysisResult: questionAnalysis,
-      dataSources: integratedData.metadata?.sources || []
+      dataSources: integratedData.metadata?.sources || [],
+      referenceAnalysis: referenceResolution.analysis || {}
     };
 
     // Save the answer to conversation history
@@ -179,7 +190,8 @@ const askQuestion = async (req, res) => {
         resolvedQuestion: referenceResolution.hasReference ? processQuestion : undefined,
         referencedDocuments: referenceResolution.referencedDocuments || [],
         analysisResult: questionAnalysis,
-        dataSources: integratedData.metadata?.sources || []
+        dataSources: integratedData.metadata?.sources || [],
+        referenceAnalysis: referenceResolution.analysis || {}
       }
     });
 

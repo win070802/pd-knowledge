@@ -1,0 +1,14 @@
+[build]
+  builder = "nixpacks"
+  buildCommand = "npm install"
+
+[deploy]
+  startCommand = "npm start"
+  healthcheckPath = "/api/health"
+  healthcheckTimeout = 60
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  SSL_ENABLED = "true"
+  SSL_REJECT_UNAUTHORIZED = "true" 
