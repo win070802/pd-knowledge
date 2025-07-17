@@ -3,7 +3,7 @@
   buildCommand = "npm install"
 
 [deploy]
-  startCommand = "node server-minimal.js"
+  startCommand = "node server.js"
   # Disable health check completely
   healthcheckEnabled = false
   # healthcheckPath = "/"
