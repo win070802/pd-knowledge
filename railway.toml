@@ -4,13 +4,16 @@
 
 [deploy]
   startCommand = "node scripts/migrate-production.js && node server.js"
-  # Disable health check completely
-  healthcheckEnabled = false
-  # healthcheckPath = "/"
-  # healthcheckTimeout = 60
+  # Enable health check with longer timeout
+  healthcheckEnabled = true
+  healthcheckPath = "/simple-health"
+  healthcheckTimeout = 120
 
 [env]
   NODE_ENV = "production"
   PORT = "8080"
   SSL_ENABLED = "true"
-  SSL_REJECT_UNAUTHORIZED = "true" 
+  SSL_REJECT_UNAUTHORIZED = "true"
+  # Increase timeouts for API and uploads
+  API_TIMEOUT_MINUTES = "15"
+  UPLOAD_TIMEOUT_MINUTES = "30" 
