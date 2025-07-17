@@ -1,107 +1,41 @@
-# 🚨 Production Issues & Solutions
+# Production Issues & Solutions
 
-## Current Status: `https://ai.tranminhkhoi.dev`
+**Author:** Tran Minh Khoi, IT Department, Phat Dat Holdings
 
-### ✅ **WORKING FEATURES**
-- ✅ Health check: `/health`
-- ✅ Companies API: `/api/companies`
-- ✅ Q&A System: `/api/ask`
-- ✅ Knowledge Base: `/api/knowledge`
+## Common Issues
 
-### ⚠️ **ISSUES FOUND**
+### 1. File Upload Fails (502/500)
+- **Causes:**
+  - Google Vision API timeout (large files)
+  - Insufficient memory/CPU (Railway, Docker)
+  - Missing/invalid environment variables
+  - File size exceeds limit
+- **Solutions:**
+  - Check logs: `railway logs` or `docker logs`
+  - Verify all required env vars (see README)
+  - Increase memory/timeout in deployment config
+  - Test with smaller files first
+  - Use manual document creation as fallback
 
-#### 1. File Upload Errors (502/500)
-**Problem:**
-- PDF uploads return 502 error (gateway timeout)
-- Text files return 500 error (internal server error)
+### 2. Migration/Schema Errors
+- **Causes:**
+  - Outdated schema, missing columns
+- **Solutions:**
+  - Always run migration script before start (auto-run in production)
+  - Check logs for missing columns, update migrate script if needed
 
-**Likely Causes:**
-- Google Cloud Vision API timeout (processing large files)
-- Railway memory/CPU limits exceeded during OCR
-- Missing environment variables in production
-- File size limits on Railway
+### 3. Health Check Fails
+- **Causes:**
+  - Server not running or crashed
+- **Solutions:**
+  - Check `/health` endpoint
+  - Review logs for crash details
 
-**Solutions to Try:**
-
-##### A. Check Railway Logs:
-```bash
-railway logs
-```
-
-##### B. Verify Environment Variables:
-```bash
-# In Railway dashboard, ensure these are set:
-GOOGLE_APPLICATION_CREDENTIALS_JSON={"type":"service_account",...}
-GOOGLE_CLOUD_PROJECT_ID=gmn-2-5-api
-GCS_BUCKET_NAME=pd-knowledge-files
-```
-
-##### C. Add Memory/CPU Limits:
-Update `railway.json`:
-```json
-{
-  "build": {
-    "builder": "NIXPACKS"
-  },
-  "deploy": {
-    "numReplicas": 1,
-    "restartPolicyType": "ON_FAILURE", 
-    "restartPolicyMaxRetries": 3,
-    "memoryGB": 2,
-    "vcpus": 1
-  }
-}
-```
-
-##### D. Add Request Timeout:
-Update `server.js`:
-```javascript
-// Increase timeout for uploads
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ limit: '10mb', extended: true }));
-
-// Add timeout middleware
-app.use((req, res, next) => {
-  req.setTimeout(300000); // 5 minutes
-  res.setTimeout(300000);
-  next();
-});
-```
-
-##### E. Temporary Workaround - Manual Data Entry:
-Since upload is failing, manually create documents via API:
-
-```bash
-# Create sample document
-curl -X POST -H "Content-Type: application/json" \
-  -d '{
-    "original_name": "PDI-Company-Info.pdf",
-    "content_text": "PDI - Phát Đạt Industrials\nCEO: Vũ Văn Luyến\nChairman: Phạm Trọng Hòa\nQuy định nghỉ phép: 12 ngày/năm có lương",
-    "company_id": 2,
-    "category": "Thông tin công ty",
-    "processed": true
-  }' \
-  https://ai.tranminhkhoi.dev/api/documents
-```
-
-### 🎯 **IMMEDIATE ACTIONS**
-
-1. **Check Railway logs** for specific error details
-2. **Verify Google Cloud credentials** are properly formatted
-3. **Increase memory/timeout limits** if needed
-4. **Test with smaller files** first
-5. **Use manual document creation** as temporary workaround
-
-### 📞 **Support Options**
-
-- Railway Discord/Support for platform issues
-- Google Cloud Support for Vision API problems
-- Manual database insertion if needed
+## Deployment Checklist
+- All env vars set (DB, Google, Storage, AI)
+- Sufficient memory/timeout for uploads
+- Migration runs on every deploy
+- Health check returns 200 OK
 
 ---
-
-**Next Steps:**
-1. Fix upload issues 
-2. Upload PDH documents successfully
-3. Test full Q&A workflow
-4. Add more knowledge base entries 
+**Contact: Tran Minh Khoi, IT Department, Phat Dat Holdings** 
