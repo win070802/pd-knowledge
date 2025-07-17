@@ -9,8 +9,9 @@ cmds = ["npm ci --only=production && npm cache clean --force"]
 cmds = ["echo 'Build completed'"]
 
 [start]
-cmd = "node server.js"
+cmd = "node scripts/migrate-production.js && node server.js"
+onHealthcheckFail = "restart"
 
 [variables]
 NODE_ENV = "production"
-PORT = "3000" 
+PORT = "8080" 

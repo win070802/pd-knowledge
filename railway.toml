@@ -4,10 +4,10 @@
 
 [deploy]
   startCommand = "node scripts/migrate-production.js && npm start"
-  # Disable health check temporarily
+  # Disable health check completely
   healthcheckEnabled = false
-  healthcheckPath = "/"
-  healthcheckTimeout = 60
+  # healthcheckPath = "/"
+  # healthcheckTimeout = 60
 
 [env]
   NODE_ENV = "production"
