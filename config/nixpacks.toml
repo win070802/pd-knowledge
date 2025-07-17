@@ -1,10 +1,19 @@
 [phases.setup]
-nixPkgs = ["nodejs", "imagemagick", "tesseract"]
+nixPkgs = ["nodejs-18_x", "imagemagick", "tesseract", "graphicsmagick", "ghostscript", "poppler-utils"]
 
 [phases.install]
 dependsOn = ["setup"]
+cmds = ["npm ci --only=production && npm cache clean --force"]
+
+[phases.build]
+cmds = ["echo 'Build completed'"]
+
+[start]
+cmd = "npm run railway:start"
 
 [variables]
+NODE_ENV = "production"
+PORT = "8080"
 NIXPACKS_METADATA = "pdf-knowledge-system"
 MAGICK_CONFIGURE_PATH = "/nix/store"
-TESSDATA_PREFIX = "/app" 
+TESSDATA_PREFIX = "/app/data" 

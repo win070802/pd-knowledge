@@ -67,3 +67,50 @@ curl -X POST http://localhost:3000/api/auth/login \
 
 ---
 **Copyright © Tran Minh Khoi, IT Department, Phat Dat Holdings** 
+
+## Railway Deployment Instructions
+
+### Overview
+This project is configured to deploy on Railway using Nixpacks as the build system. Docker configuration has been deprecated in favor of Nixpacks for easier maintenance.
+
+### Deployment Steps
+
+1. **Prerequisites**
+   - Railway account with CLI access
+   - Project set up on Railway
+
+2. **Deploy Commands**
+   ```bash
+   # Login to Railway
+   railway login
+
+   # Link to your project
+   railway link
+
+   # Deploy the application
+   railway up
+   ```
+
+3. **Important Configuration Files**
+   - `railway.toml` - Main Railway configuration
+   - `config/nixpacks.toml` - Build configuration
+   - `package.json` - Contains railway:start script
+
+4. **Environment Variables**
+   The following environment variables must be set in Railway:
+
+   ```
+   DATABASE_URL=your_cockroachdb_connection_string
+   GOOGLE_APPLICATION_CREDENTIALS_JSON=your_google_json_credentials
+   GOOGLE_CLOUD_PROJECT_ID=your_gcp_project_id
+   GEMINI_API_KEY=your_gemini_api_key
+   ```
+
+5. **Resources**
+   - Memory: 3GB
+   - vCPU: 1
+   - Scale according to your needs
+
+6. **Healthcheck**
+   - Path: `/health`
+   - Timeout: 300 seconds 

@@ -68,3 +68,9 @@ vision-ocr-service-demo.js
 # Backup files
 *.backup
 *-backup.*
+*.bak
+*.bak2
+*.local
+Dockerfile.*
+*/service-account-key.json.*
+*/vision-key.json.*
