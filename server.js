@@ -121,8 +121,14 @@ async function startServer() {
     }
     
     // Initialize database (or reinitialize if reset was performed)
-    // XÓA HOÀN TOÀN các dòng require hoặc gọi initializeDatabase
-    // Đảm bảo chỉ migrate schema bằng migrate-production.js cho production
+    try {
+      const { initializeDatabase } = require('./database');
+      await initializeDatabase();
+      console.log('✅ Database initialized successfully');
+    } catch (dbError) {
+      console.error('❌ Error initializing database:', dbError);
+      console.error('⚠️ Continuing without database initialization');
+    }
     
     console.log('Database ready');
     
