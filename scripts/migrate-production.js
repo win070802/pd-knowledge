@@ -50,6 +50,35 @@ async function migrateDatabase() {
     `);
     console.log('✅ Companies table ensured');
 
+    // Create conversations table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS conversations (
+        id SERIAL PRIMARY KEY,
+        session_id VARCHAR(255) UNIQUE NOT NULL,
+        user_id INTEGER REFERENCES users(id),
+        context JSONB DEFAULT '{}',
+        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        is_active BOOLEAN DEFAULT TRUE
+      )
+    `);
+    console.log('✅ Conversations table ensured');
+    
+    // Create conversation_messages table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS conversation_messages (
+        id SERIAL PRIMARY KEY,
+        conversation_id INTEGER REFERENCES conversations(id) ON DELETE CASCADE,
+        session_id VARCHAR(255) NOT NULL,
+        type VARCHAR(50) NOT NULL,
+        message TEXT NOT NULL,
+        document_ids INTEGER[],
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    console.log('✅ Conversation messages table ensured');
+
     // Đảm bảo cột parent_group tồn tại (nếu migrate từ schema cũ)
     const companiesColumns = await client.query(`
       SELECT column_name FROM information_schema.columns WHERE table_name = 'companies'`);
