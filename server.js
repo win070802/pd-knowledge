@@ -55,6 +55,15 @@ app.get('/simple-health', (req, res) => {
   });
 });
 
+// Thêm endpoint /health cho Railway
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    message: 'Server is running'
+  });
+});
+
 // Dynamic timeout based on request type and file size
 app.use((req, res, next) => {
   let timeout = API_TIMEOUT; // Default timeout
