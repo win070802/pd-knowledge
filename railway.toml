@@ -3,7 +3,7 @@
   # Không cần buildCommand khi sử dụng Dockerfile
 
 [deploy]
-  startCommand = "node server.js"
+  startCommand = "node server-basic.js"
   # Disable health check completely
   healthcheckEnabled = false
   # healthcheckPath = "/"
