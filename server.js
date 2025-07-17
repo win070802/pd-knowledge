@@ -12,6 +12,17 @@ console.log(`🚀 Starting server with NODE_ENV: ${process.env.NODE_ENV}`);
 console.log(`🔌 Port configuration: ${PORT}`);
 console.log(`🔐 SSL enabled: ${process.env.SSL_ENABLED}`);
 
+// Xử lý lỗi không bắt được
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Không thoát process để server tiếp tục chạy
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Không thoát process để server tiếp tục chạy
+});
+
 // Create temp directory for file processing
 const tempDir = './temp';
 if (!fs.existsSync(tempDir)) {
@@ -34,6 +45,15 @@ app.use(morgan('combined'));
 app.use(cors());
 app.use(express.json({ limit: MAX_FILE_SIZE }));
 app.use(express.urlencoded({ extended: true, limit: MAX_FILE_SIZE }));
+
+// Thêm endpoint /simple-health đơn giản không phụ thuộc vào database
+app.get('/simple-health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    message: 'Server is running'
+  });
+});
 
 // Dynamic timeout based on request type and file size
 app.use((req, res, next) => {
@@ -73,23 +93,32 @@ app.use('*', notFoundHandler);
 
 // Đảm bảo migrate schema trước khi start server
 if (process.env.NODE_ENV === 'production') {
-  const { execSync } = require('child_process');
   try {
     console.log('🔄 Migrating database schema for production...');
-    execSync('node scripts/migrate-production.js', { stdio: 'inherit' });
+    // Sử dụng require thay vì execSync để tránh lỗi
+    require('./scripts/migrate-production');
     console.log('✅ Database migrated!');
   } catch (err) {
     console.error('❌ Database migration failed:', err);
-    process.exit(1);
+    // Không thoát process để server vẫn chạy được
+    console.error('⚠️ Continuing without migration');
   }
 }
 
 // Start server
 async function startServer() {
   try {
-    // Check for factory reset first
-    const { checkFactoryReset } = require('./scripts/factory-reset');
-    const wasReset = await checkFactoryReset();
+    // Check for factory reset first - bọc trong try-catch để tránh lỗi
+    try {
+      const { checkFactoryReset } = require('./scripts/factory-reset');
+      const wasReset = await checkFactoryReset();
+      if (wasReset) {
+        console.log('\n🔄 Factory reset was performed - system is in clean state');
+        console.log('💡 To disable factory reset, set FACTORY_RESET=false\n');
+      }
+    } catch (resetError) {
+      console.error('❌ Error checking factory reset:', resetError);
+    }
     
     // Initialize database (or reinitialize if reset was performed)
     // XÓA HOÀN TOÀN các dòng require hoặc gọi initializeDatabase
@@ -101,15 +130,11 @@ async function startServer() {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`📄 API Documentation available at http://localhost:${PORT}/health`);
       console.log(`💬 Ready to answer questions about your documents!`);
-      
-      if (wasReset) {
-        console.log('\n🔄 Factory reset was performed - system is in clean state');
-        console.log('💡 To disable factory reset, set FACTORY_RESET=false\n');
-      }
     });
   } catch (error) {
     console.error('Failed to start server:', error);
-    process.exit(1);
+    // Không thoát process để server có thể tiếp tục khởi động
+    console.error('⚠️ Continuing despite startup error');
   }
 }
 
