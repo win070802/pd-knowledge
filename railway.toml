@@ -4,7 +4,7 @@
   buildCommand = "npm ci"
 
 [deploy]
-  startCommand = "./start.sh"
+  startCommand = "./run.sh"
   healthcheckEnabled = true
   healthcheckPath = "/simple-health"
   healthcheckTimeout = 120

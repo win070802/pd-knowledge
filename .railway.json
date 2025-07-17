@@ -6,7 +6,7 @@
   },
   "deploy": {
     "numReplicas": 1,
-    "startCommand": "./start.sh",
+    "startCommand": "./run.sh",
     "healthcheckPath": "/simple-health",
     "restartPolicyType": "ON_FAILURE",
     "healthcheckTimeout": 120,

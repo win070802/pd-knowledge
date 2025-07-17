@@ -5,7 +5,7 @@ nixPkgs = ['imagemagick', 'tesseract', 'tesseract-language-vie', 'tesseract-lang
 cmds = ['npm ci']
 
 [phases.build]
-cmds = ['mkdir -p temp temp-images uploads', 'chmod +x start.sh']
+cmds = ['mkdir -p temp temp-images uploads', 'chmod +x run.sh']
 
 [start]
-cmd = './start.sh' 
+cmd = './run.sh' 
