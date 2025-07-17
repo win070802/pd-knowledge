@@ -17,7 +17,19 @@ class DataIntegrationService {
       console.log(`✅ Loaded ${this.sensitiveRules.length} sensitive rules from database`);
     } catch (error) {
       console.error('Error loading sensitive rules:', error);
+      // Nếu lỗi liên quan đến cột không tồn tại, sử dụng mảng rỗng
       this.sensitiveRules = [];
+      
+      // Thử tải tất cả các quy tắc mà không lọc theo trạng thái active
+      try {
+        const client = require('../../config/database').pool.connect();
+        const result = await (await client).query('SELECT * FROM sensitive_rules');
+        this.sensitiveRules = result.rows;
+        console.log(`✅ Loaded ${this.sensitiveRules.length} sensitive rules directly from database`);
+        (await client).release();
+      } catch (dbError) {
+        console.error('Error loading sensitive rules directly:', dbError);
+      }
     }
   }
 
