@@ -114,3 +114,14 @@ This project is configured to deploy on Railway using Nixpacks as the build syst
 6. **Healthcheck**
    - Path: `/health`
    - Timeout: 300 seconds 
+
+## Deployment
+
+The application is configured to automatically run database migrations when deployed to Railway through the `railway:start` script in package.json.
+
+This script sequence:
+1. Creates the database if it doesn't exist
+2. Runs all migrations to ensure correct database structure
+3. Starts the server
+
+No manual intervention required for migrations on deployment. 
