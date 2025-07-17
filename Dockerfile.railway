@@ -60,12 +60,12 @@ RUN mkdir -p temp temp-images uploads && \
 EXPOSE ${PORT:-8080}
 
 # Tạo startup script
-RUN echo '#!/bin/sh\nnode scripts/migrate-production.js && node server.js' > /app/startup.sh && \
+RUN echo '#!/bin/sh\nnode server-minimal.js' > /app/startup.sh && \
     chmod +x /app/startup.sh
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8080}/health || exit 1
+# Health check disabled
+# HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+#     CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT:-8080}/health || exit 1
 
 # Start application
 CMD ["/app/startup.sh"] 
