@@ -17,9 +17,14 @@ const authRoutes = require('./auth');
 const documentsController = require('../controllers/documentsController');
 const learnController = require('../controllers/learnController');
 
-// Health check
+// Health check - thêm cả root path để đảm bảo Railway health check hoạt động
 router.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
+// Root health check cho Railway
+router.get('/', (req, res) => {
+  res.json({ status: 'OK', message: 'PD Knowledge API is running', timestamp: new Date().toISOString() });
 });
 
 // Main file upload (requires authentication)
