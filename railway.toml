@@ -1,8 +1,7 @@
 [build]
-  # Explicitly disable Dockerfile and use Nixpacks
+  # Explicitly use Nixpacks
   builder = "NIXPACKS"
   buildCommand = "npm ci"
-  dockerfilePath = "DISABLED"
 
 [deploy]
   startCommand = "node scripts/migrate-production.js && node server.js"
