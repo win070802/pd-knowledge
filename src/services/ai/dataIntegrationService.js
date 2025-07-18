@@ -257,13 +257,28 @@ class DataIntegrationService {
         const { pool } = require('../../config/database');
         const client = await pool.connect();
         try {
+          // Trước tiên lấy thông tin công ty
+          const companyResult = await client.query(`
+            SELECT * FROM companies 
+            WHERE UPPER(company_code) = UPPER($1)
+          `, [analysis.company]);
+          
+          if (companyResult.rows.length === 0) {
+            console.log(`⚠️ Company with code "${analysis.company}" not found`);
+            return [];
+          }
+          
+          const company = companyResult.rows[0];
+          
+          // Sau đó lấy tài liệu của công ty đó
           const result = await client.query(`
             SELECT d.*, c.company_code as company_code, c.company_name as company_name 
             FROM document_metadata d 
             JOIN companies c ON d.company_id = c.id 
-            WHERE c.company_code = $1 
+            WHERE c.id = $1 
             ORDER BY d.date_created DESC
-          `, [analysis.company]);
+          `, [company.id]);
+          
           return result.rows;
         } finally {
           client.release();
@@ -275,7 +290,21 @@ class DataIntegrationService {
       
       // Lọc theo công ty
       if (analysis.company) {
-        filters.company_id = analysis.company;
+        // Lấy ID công ty từ mã công ty
+        const { pool } = require('../../config/database');
+        const companyClient = await pool.connect();
+        try {
+          const companyResult = await companyClient.query(`
+            SELECT id FROM companies 
+            WHERE UPPER(company_code) = UPPER($1)
+          `, [analysis.company]);
+          
+          if (companyResult.rows.length > 0) {
+            filters.company_id = companyResult.rows[0].id;
+          }
+        } finally {
+          companyClient.release();
+        }
       }
       
       // Lọc theo phòng ban (nếu có)
@@ -544,7 +573,7 @@ class DataIntegrationService {
       try {
         console.log(`🔍 Checking constraints for question: "${question}"`);
         
-        // Lấy tất cả constraints
+      // Lấy tất cả constraints
         const query = `
           SELECT * FROM constraints 
           WHERE is_active = true
@@ -552,17 +581,17 @@ class DataIntegrationService {
         
         const result = await client.query(query);
         const constraints = result.rows;
-        
-        // Tìm constraint phù hợp
-        for (const constraint of constraints) {
-          if (this.matchConstraint(question, constraint.question)) {
+      
+      // Tìm constraint phù hợp
+      for (const constraint of constraints) {
+        if (this.matchConstraint(question, constraint.question)) {
             console.log(`✅ Found matching constraint: "${constraint.question}"`);
-            return constraint;
-          }
+          return constraint;
         }
-        
+      }
+      
         console.log('⚠️ No matching constraint found');
-        return null;
+      return null;
       } finally {
         client.release();
       }
@@ -657,22 +686,30 @@ class DataIntegrationService {
     }
     
     // Xử lý đặc biệt cho câu hỏi danh sách tài liệu theo công ty
-    if (analysis.intent === 'list_documents' && result.documents.length > 0) {
-      const company = result.companyInfo ? result.companyInfo.name : analysis.company;
-      let documentList = '';
+    if (analysis.intent === 'list_documents' && result.documents.length >= 0) {
+      // Lấy tên công ty từ thông tin công ty hoặc từ tài liệu
+      let companyName = "không xác định";
+      
+      if (result.companyInfo) {
+        companyName = result.companyInfo.company_name;
+      } else if (result.documents.length > 0 && result.documents[0].company_name) {
+        companyName = result.documents[0].company_name;
+      } else if (analysis.company) {
+        companyName = analysis.company;
+      }
       
       if (result.documents.length > 0) {
-        documentList = result.documents.map((doc, index) => 
-          `${index + 1}. ${doc.original_name} (${doc.category || 'Chưa phân loại'})`
+        const documentList = result.documents.map((doc, index) => 
+          `${index + 1}. ${doc.dc_title || doc.original_name || 'Tài liệu không tên'} (${doc.dc_type || doc.category || 'Chưa phân loại'})`
         ).join('\n');
         
         result.constraint = {
-          answer: `Danh sách tài liệu thuộc ${company}:\n\n${documentList}`,
+          answer: `Danh sách tài liệu thuộc ${companyName}:\n\n${documentList}`,
           confidence: 100
         };
       } else {
         result.constraint = {
-          answer: `Hiện tại chưa có quy định hoặc quy trình nào được upload cho ${company}. Vui lòng upload tài liệu để có thể trả lời câu hỏi này.`,
+          answer: `Hiện tại chưa có tài liệu nào được upload cho ${companyName}. Vui lòng upload tài liệu để có thể trả lời câu hỏi này.`,
           confidence: 100
         };
       }

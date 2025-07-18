@@ -364,54 +364,94 @@ const uploadDocument = async (req, res) => {
       
       // Tạo bản ghi trong document_metadata
       try {
-        await db.query(`
-          INSERT INTO document_metadata (
-            dc_identifier, dc_title, dc_description, dc_type, 
-            dc_format, dc_language, dc_date, dc_subject,
-            record_identifier, record_class, record_status,
-            security_classification, company_id, organization_name,
-            file_size, primary_location, extracted_text, 
-            document_summary, key_information, keywords, 
-            categories, tags, created_by
-          ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23
-          )
-        `, [
-          `DOC-${documentToSave.id}`, // dc_identifier
-          originalName, // dc_title
-          `Document ${originalName}`, // dc_description
-          category, // dc_type
-          req.file.mimetype, // dc_format
-          'vi', // dc_language
-          new Date(), // dc_date
-          processingResult.structureAnalysis.keyTerms, // dc_subject
-          `REC-${documentToSave.id}`, // record_identifier
-          category, // record_class
-          'active', // record_status
-          'internal', // security_classification
-          finalCompanyId, // company_id
-          finalCompany ? finalCompany.company_name : 'Unknown', // organization_name
-          fileSize, // file_size
-          finalStorageResult.url, // primary_location (URL)
-          contentText, // extracted_text
-          '', // document_summary
-          JSON.stringify({
-            documentId: documentToSave.id,
-            fileName: fileName,
-            fileSize: fileSize,
-            originalName: originalName,
-            pageCount: pageCount,
-            uploadDate: new Date()
-          }), // key_information
-          processingResult.structureAnalysis.keyTerms, // keywords
-          [category], // categories
-          processingResult.structureAnalysis.mainTopics, // tags
-          req.user ? req.user.username : 'system' // created_by
-        ]);
+        const { pool } = require('../config/database');
+        const client = await pool.connect();
         
-        console.log(`✅ Created document_metadata record for ${documentToSave.id}`);
+        try {
+          console.log(`📝 Inserting into document_metadata table...`);
+          
+          await client.query(`
+            INSERT INTO document_metadata (
+              -- Dublin Core metadata
+              dc_identifier, dc_title, dc_description, dc_type, 
+              dc_format, dc_language, dc_date, dc_subject,
+              dc_creator, dc_publisher,
+              
+              -- Records management
+              record_identifier, record_class, record_status,
+              security_classification,
+              
+              -- Business process metadata
+              company_id, organization_name, department,
+              
+              -- Technical metadata
+              file_size, primary_location,
+              
+              -- Search and discovery
+              keywords, categories, tags,
+              
+              -- Content
+              extracted_text, document_summary, key_information,
+              
+              -- Management
+              created_by
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
+              $11, $12, $13, $14, $15, $16, $17, $18, $19, 
+              $20, $21, $22, $23, $24, $25, $26
+            )
+          `, [
+            `DOC-${documentToSave.id}`, // dc_identifier
+            originalName, // dc_title
+            `Document ${originalName}`, // dc_description
+            category, // dc_type
+            req.file.mimetype, // dc_format
+            'vi', // dc_language
+            new Date(), // dc_date
+            processingResult.structureAnalysis.keyTerms, // dc_subject
+            [req.user ? req.user.username : 'system'], // dc_creator
+            finalCompany ? finalCompany.company_name : 'System', // dc_publisher
+            
+            `REC-${documentToSave.id}`, // record_identifier
+            category, // record_class
+            'active', // record_status
+            'internal', // security_classification
+            
+            finalCompanyId, // company_id
+            finalCompany ? finalCompany.company_name : 'Unknown', // organization_name
+            finalCompany && finalCompany.departments ? Object.keys(finalCompany.departments)[0] : null, // department
+            
+            fileSize, // file_size
+            finalStorageResult.url, // primary_location
+            
+            processingResult.structureAnalysis.keyTerms, // keywords
+            [category], // categories
+            processingResult.structureAnalysis.mainTopics, // tags
+            
+            contentText, // extracted_text
+            processingResult.structureAnalysis.summary || '', // document_summary
+            JSON.stringify({
+              documentId: documentToSave.id,
+              fileName: fileName,
+              fileSize: fileSize,
+              originalName: originalName,
+              pageCount: pageCount,
+              uploadDate: new Date().toISOString(),
+              processingMethod: processingResult.processingMethod,
+              classification: processingResult.classification,
+              canAnswerQuestions: processingResult.structureAnalysis.canAnswerQuestions
+            }), // key_information
+            
+            req.user ? req.user.username : 'system' // created_by
+          ]);
+          
+          console.log(`✅ Created document_metadata record for ${documentToSave.id}`);
+        } finally {
+          client.release();
+        }
       } catch (metadataError) {
         console.error('⚠️ Error creating document_metadata:', metadataError.message);
+        // Không throw error để tiếp tục quá trình
       }
     }
 
@@ -766,21 +806,106 @@ async function mergeDocumentData(oldDoc, newDoc, companyInfo) {
       
       // Cập nhật document_metadata khi merge
       try {
-        const db = require('../../database').db;
-        await db.query(`
-          UPDATE document_metadata 
-          SET 
-            extracted_text = $1,
-            key_information = jsonb_set(key_information, '{mergeCount}', to_jsonb(COALESCE((key_information->>'mergeCount')::int, 0) + 1)),
-            keywords = $2,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE dc_identifier = $3
-        `, [
-          mergedData.content_text,
-          mergedData.metadata.keyTerms || [],
-          `DOC-${oldDoc.id}`
-        ]);
-        console.log(`✅ Updated document_metadata for merged document ${oldDoc.id}`);
+        const { pool } = require('../../src/config/database');
+        const client = await pool.connect();
+        
+        try {
+          console.log(`📝 Updating document_metadata for merged document ${oldDoc.id}...`);
+          
+          // Kiểm tra xem document_metadata đã tồn tại chưa
+          const existingMetadata = await client.query(`
+            SELECT * FROM document_metadata 
+            WHERE dc_identifier = $1
+          `, [`DOC-${oldDoc.id}`]);
+          
+          if (existingMetadata.rows.length > 0) {
+            // Cập nhật document_metadata hiện có
+            await client.query(`
+              UPDATE document_metadata 
+              SET 
+                extracted_text = $1,
+                date_modified = CURRENT_TIMESTAMP,
+                key_information = jsonb_set(
+                  COALESCE(key_information, '{}'::jsonb),
+                  '{mergeCount}',
+                  to_jsonb(COALESCE((key_information->>'mergeCount')::int, 0) + 1)
+                ),
+                keywords = $2,
+                document_summary = CASE 
+                  WHEN LENGTH(COALESCE(document_summary, '')) < LENGTH($3) THEN $3
+                  ELSE document_summary
+                END,
+                updated_by = $4,
+                version_minor = version_minor + 1,
+                version_history = COALESCE(version_history, '[]'::jsonb) || jsonb_build_object(
+                  'timestamp', CURRENT_TIMESTAMP,
+                  'action', 'merge',
+                  'by', $4,
+                  'details', 'Document merged with updated content'
+                )::jsonb
+              WHERE dc_identifier = $5
+            `, [
+              mergedData.content_text,
+              mergedData.metadata.keyTerms || [],
+              mergedData.metadata.document_summary || '',
+              'system',
+              `DOC-${oldDoc.id}`
+            ]);
+            
+            console.log(`✅ Updated existing document_metadata for ${oldDoc.id}`);
+          } else {
+            // Tạo mới document_metadata nếu chưa tồn tại
+            console.log(`⚠️ No document_metadata found for ${oldDoc.id}, creating new record`);
+            
+            await client.query(`
+              INSERT INTO document_metadata (
+                dc_identifier, dc_title, dc_description, dc_type,
+                dc_language, dc_date, dc_creator,
+                record_identifier, record_class, record_status,
+                security_classification, company_id,
+                extracted_text, key_information, keywords,
+                document_summary, created_by, updated_by,
+                version_history
+              ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                $11, $12, $13, $14, $15, $16, $17, $18, $19
+              )
+            `, [
+              `DOC-${oldDoc.id}`,
+              oldDoc.original_name,
+              `Document ${oldDoc.original_name}`,
+              oldDoc.category || 'Document',
+              'vi',
+              new Date(),
+              ['system'],
+              `REC-${oldDoc.id}`,
+              oldDoc.category || 'Document',
+              'active',
+              'internal',
+              oldDoc.company_id,
+              mergedData.content_text,
+              JSON.stringify({
+                documentId: oldDoc.id,
+                mergeCount: 1,
+                mergeDate: new Date().toISOString()
+              }),
+              mergedData.metadata.keyTerms || [],
+              mergedData.metadata.document_summary || '',
+              'system',
+              'system',
+              JSON.stringify([{
+                timestamp: new Date().toISOString(),
+                action: 'merge',
+                by: 'system',
+                details: 'Document merged with updated content'
+              }])
+            ]);
+            
+            console.log(`✅ Created new document_metadata for merged document ${oldDoc.id}`);
+          }
+        } finally {
+          client.release();
+        }
       } catch (updateError) {
         console.error('⚠️ Error updating document_metadata:', updateError.message);
       }

@@ -121,9 +121,8 @@ const createKnowledge = async (req, res) => {
         keywords, 
         category, 
         is_active, 
-        metadata,
-        created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        metadata
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [
         question, 
         answer, 
@@ -131,8 +130,7 @@ const createKnowledge = async (req, res) => {
         keywords || null, 
         category || null, 
         is_active !== undefined ? is_active : true,
-        metadata || null,
-        req.user ? req.user.username : 'system'
+        metadata || null
       ]
     );
     

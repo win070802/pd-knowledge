@@ -255,7 +255,7 @@ TRÁLỜI:`;
         }
         
         if (doc.document_sections) {
-          context += `Sections:\n`;
+            context += `Sections:\n`;
           if (Array.isArray(doc.document_sections)) {
             doc.document_sections.forEach((section, i) => {
               context += `- ${section.title ? section.title + ': ' : ''}${section.content || ''}\n`;

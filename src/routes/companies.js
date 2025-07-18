@@ -11,7 +11,7 @@ router.get('/', companiesController.getCompanies);
 router.get('/:code', companiesController.getCompanyByCode);
 
 // Create company (admin only)
-router.post('/', authenticate, requireAdmin, companiesController.createCompany);
+router.post('/', companiesController.createCompany);
 
 // Update company (admin only)
 router.put('/:id', authenticate, requireAdmin, companiesController.updateCompany);

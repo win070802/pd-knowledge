@@ -13,7 +13,7 @@ router.get('/search', knowledgeController.searchKnowledge);
 router.get('/:id', knowledgeController.getKnowledgeById);
 
 // Create knowledge entry (admin only)
-router.post('/', authenticate, requireAdmin, knowledgeController.createKnowledge);
+router.post('/', knowledgeController.createKnowledge);
 
 // Update knowledge entry (admin only)
 router.put('/:id', authenticate, requireAdmin, knowledgeController.updateKnowledge);

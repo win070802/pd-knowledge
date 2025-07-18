@@ -24,7 +24,7 @@ const askQuestion = async (req, res) => {
     console.log(`🗣️ Processing question with session: ${sessionId || 'new'}`);
 
     // Get or create conversation session
-    const session = await conversationService.getOrCreateSession(sessionId, userId);
+    const session = await conversationService.getOrCreateSession(sessionId || null, userId);
     const actualSessionId = session.session_id;
 
     // Save the question to conversation history FIRST
