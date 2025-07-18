@@ -31,7 +31,7 @@ curl -X POST http://localhost:3000/api/auth/login \
 - **Ask Question:** `/api/ask` (public)
 - **Learn Knowledge:** `/api/learn` (admin)
 - **Companies:** `/api/companies` (public)
-
+   
 ## Environment Variables
 - `DATABASE_URL` (Postgres/CockroachDB)
 - `GOOGLE_APPLICATION_CREDENTIALS_JSON` (Google Cloud Vision)

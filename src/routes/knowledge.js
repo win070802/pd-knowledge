@@ -9,6 +9,9 @@ router.get('/company/:companyId', knowledgeController.getKnowledgeByCompany);
 // Search knowledge base (public)
 router.get('/search', knowledgeController.searchKnowledge);
 
+// Get knowledge by ID (public)
+router.get('/:id', knowledgeController.getKnowledgeById);
+
 // Create knowledge entry (admin only)
 router.post('/', authenticate, requireAdmin, knowledgeController.createKnowledge);
 

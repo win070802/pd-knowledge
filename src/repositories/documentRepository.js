@@ -4,18 +4,47 @@ class DocumentRepository {
   async createDocument(documentData) {
     const client = await pool.connect();
     try {
+      // Sử dụng bảng document_metadata thay vì documents
       const result = await client.query(
-        'INSERT INTO documents (filename, original_name, file_path, file_size, page_count, content_text, company_id, category, metadata) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *',
+        `INSERT INTO document_metadata (
+          dc_identifier, 
+          dc_title, 
+          dc_description, 
+          dc_type, 
+          dc_format, 
+          dc_language,
+          dc_date,
+          record_identifier, 
+          record_class, 
+          company_id,
+          file_size,
+          primary_location,
+          extracted_text,
+          document_summary,
+          key_information,
+          keywords,
+          categories,
+          tags
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
         [
-          documentData.filename,
-          documentData.original_name,
-          documentData.file_path,
-          documentData.file_size,
-          documentData.page_count,
-          documentData.content_text,
-          documentData.company_id,
-          documentData.category,
-          documentData.metadata
+          `DOC-${Date.now()}`, // dc_identifier
+          documentData.original_name, // dc_title
+          documentData.metadata?.description || `Document ${documentData.original_name}`, // dc_description
+          documentData.category || 'Document', // dc_type
+          documentData.metadata?.format || 'application/pdf', // dc_format
+          documentData.metadata?.language || 'vi', // dc_language
+          new Date(), // dc_date
+          `REC-${Date.now()}`, // record_identifier
+          documentData.category || 'Document', // record_class
+          documentData.company_id, // company_id
+          documentData.file_size, // file_size
+          documentData.file_path, // primary_location
+          documentData.content_text, // extracted_text
+          documentData.metadata?.summary || '', // document_summary
+          documentData.metadata || {}, // key_information
+          documentData.metadata?.keyTerms || [], // keywords
+          [documentData.category], // categories
+          documentData.metadata?.tags || [] // tags
         ]
       );
       return result.rows[0];
@@ -27,7 +56,7 @@ class DocumentRepository {
   async getDocuments() {
     const client = await pool.connect();
     try {
-      const result = await client.query('SELECT * FROM documents ORDER BY upload_date DESC');
+      const result = await client.query('SELECT * FROM document_metadata ORDER BY date_created DESC');
       return result.rows;
     } finally {
       client.release();
@@ -38,11 +67,11 @@ class DocumentRepository {
     const client = await pool.connect();
     try {
       const result = await client.query(`
-        SELECT d.*, c.code as company_code, c.full_name as company_name 
-        FROM documents d 
+        SELECT d.*, c.company_code as company_code, c.company_name as company_name 
+        FROM document_metadata d 
         JOIN companies c ON d.company_id = c.id 
-        WHERE c.code = $1 
-        ORDER BY d.upload_date DESC
+        WHERE c.company_code = $1 
+        ORDER BY d.date_created DESC
       `, [companyCode]);
       return result.rows;
     } finally {
@@ -53,7 +82,7 @@ class DocumentRepository {
   async getDocumentById(id) {
     const client = await pool.connect();
     try {
-      const result = await client.query('SELECT * FROM documents WHERE id = $1', [id]);
+      const result = await client.query('SELECT * FROM document_metadata WHERE id = $1', [id]);
       return result.rows[0];
     } finally {
       client.release();
@@ -63,9 +92,10 @@ class DocumentRepository {
   async updateDocumentProcessed(id, processed = true) {
     const client = await pool.connect();
     try {
+      // Cập nhật trạng thái document_state thay vì processed
       const result = await client.query(
-        'UPDATE documents SET processed = $1 WHERE id = $2 RETURNING *',
-        [processed, id]
+        'UPDATE document_metadata SET document_state = $1 WHERE id = $2 RETURNING *',
+        [processed ? 'published' : 'draft', id]
       );
       return result.rows[0];
     } finally {
@@ -93,7 +123,7 @@ class DocumentRepository {
         throw new Error('No fields to update');
       }
 
-      const query = `UPDATE documents SET ${setFields.join(', ')} WHERE id = $${paramIndex} RETURNING *`;
+      const query = `UPDATE document_metadata SET ${setFields.join(', ')} WHERE id = $${paramIndex} RETURNING *`;
       values.push(id);
 
       const result = await client.query(query, values);
@@ -103,121 +133,33 @@ class DocumentRepository {
     }
   }
 
-  async searchDocuments(searchTerm, filters = {}) {
+  /**
+   * Tìm kiếm tài liệu theo từ khóa
+   * @param {string} query Từ khóa tìm kiếm
+   * @param {number} limit Giới hạn kết quả trả về
+   * @returns {Promise<Array>} Danh sách tài liệu tìm thấy
+   */
+  async searchDocuments(query, limit = 5) {
     const client = await pool.connect();
     try {
-      // Extract keywords from search term
-      const keywords = searchTerm.toLowerCase()
-        .replace(/[^\w\sàáảãạăắằẳẵặâấầẩẫậđèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵ]/g, '')
-        .split(/\s+/)
-        .filter(word => word.length > 2)
-        .slice(0, 10); // Limit to 10 keywords
-
-      console.log(`📄 Searching with keywords:`, keywords);
-      console.log(`📄 Applied filters:`, filters);
-
-      // Prepare parameters
-      const params = [`%${searchTerm}%`];
+      // Chuẩn bị từ khóa tìm kiếm
+      const searchPattern = `%${query.toLowerCase().replace(/\s+/g, '%')}%`;
       
-      // Add keyword parameters
-      for (let i = 0; i < keywords.length; i++) {
-        params.push(`%${keywords[i]}%`);
-      }
-
-      // Add filter conditions
-      let filterConditions = [];
-      
-      // Filter by company ID
-      if (filters.companyId) {
-        filterConditions.push(`company_id = $${params.length + 1}`);
-        params.push(filters.companyId);
-      }
-      
-      // Filter by company code
-      if (filters.companyCode) {
-        filterConditions.push(`company_id = (SELECT id FROM companies WHERE code = $${params.length + 1})`);
-        params.push(filters.companyCode);
-      }
-      
-      // Filter by category/topic
-      if (filters.category) {
-        filterConditions.push(`category ILIKE $${params.length + 1}`);
-        params.push(`%${filters.category}%`);
-      }
-      
-      // Filter by department (metadata field)
-      if (filters.department) {
-        filterConditions.push(`(metadata->>'department' ILIKE $${params.length + 1} OR metadata->>'departments' ILIKE $${params.length + 1})`);
-        params.push(`%${filters.department}%`);
-      }
-
-      if (keywords.length === 0 && !filterConditions.length) {
-        // Fallback to simple search
       const result = await client.query(
-        'SELECT * FROM documents WHERE content_text ILIKE $1 ORDER BY upload_date DESC',
-        [`%${searchTerm}%`]
+        `SELECT * FROM document_metadata 
+         WHERE LOWER(dc_title) LIKE $1 OR 
+               LOWER(dc_description) LIKE $1 OR
+               LOWER(document_summary) LIKE $1 OR
+               extracted_text LIKE $1
+         ORDER BY date_created DESC
+         LIMIT $2`,
+        [searchPattern, limit]
       );
-        return result.rows;
-      }
-
-      // Build flexible search query
-      let query = `
-        SELECT d.*, c.code as company_code, c.full_name as company_name, 
-        (
-          CASE 
-            WHEN d.original_name ILIKE $1 THEN 100
-            ELSE 0
-          END +
-          CASE 
-            WHEN d.category ILIKE $1 THEN 80
-            ELSE 0
-          END
-      `;
-      
-      // Add keyword scoring
-      for (let i = 0; i < keywords.length; i++) {
-        const paramIndex = i + 2; // Start from param $2
-        query += ` + CASE WHEN d.content_text ILIKE $${paramIndex} THEN 10 ELSE 0 END`;
-        query += ` + CASE WHEN d.original_name ILIKE $${paramIndex} THEN 20 ELSE 0 END`;
-      }
-      
-      query += `
-        ) as relevance_score
-        FROM documents d
-        JOIN companies c ON d.company_id = c.id
-        WHERE (
-          d.content_text ILIKE $1 
-          OR d.original_name ILIKE $1 
-          OR d.category ILIKE $1
-      `;
-      
-      // Add OR conditions for keywords
-      for (let i = 0; i < keywords.length; i++) {
-        const paramIndex = i + 2; // Start from param $2
-        query += ` OR d.content_text ILIKE $${paramIndex} OR d.original_name ILIKE $${paramIndex}`;
-      }
-      
-      query += `)`;
-      
-      // Add filter conditions if any
-      if (filterConditions.length > 0) {
-        query += ` AND ${filterConditions.join(' AND ')}`;
-      }
-      
-      query += `
-        ORDER BY relevance_score DESC, upload_date DESC
-        LIMIT 20
-      `;
-
-      console.log(`📄 Executing search query with ${params.length} parameters`);
-      const result = await client.query(query, params);
-      
-      console.log(`📄 Found ${result.rows.length} documents with relevance scores`);
-      result.rows.forEach(doc => {
-        console.log(`📄 ${doc.original_name} (score: ${doc.relevance_score})`);
-      });
       
       return result.rows;
+    } catch (error) {
+      console.error('Error searching documents:', error);
+      return [];
     } finally {
       client.release();
     }
@@ -226,7 +168,7 @@ class DocumentRepository {
   async deleteDocument(id) {
     const client = await pool.connect();
     try {
-      const result = await client.query('DELETE FROM documents WHERE id = $1 RETURNING *', [id]);
+      const result = await client.query('DELETE FROM document_metadata WHERE id = $1 RETURNING *', [id]);
       return result.rows[0];
     } finally {
       client.release();
@@ -237,6 +179,31 @@ class DocumentRepository {
   async createDocumentChunk(documentId, chunkText, chunkIndex) {
     const client = await pool.connect();
     try {
+      // Kiểm tra xem document_chunks có tồn tại không
+      const tableExists = await client.query(`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_schema = 'public' 
+          AND table_name = 'document_chunks'
+        );
+      `);
+      
+      if (!tableExists.rows[0].exists) {
+        // Tạo bảng document_chunks nếu chưa tồn tại
+        await client.query(`
+          CREATE TABLE document_chunks (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            document_id UUID REFERENCES document_metadata(id) ON DELETE CASCADE,
+            chunk_text TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(document_id, chunk_index)
+          )
+        `);
+        
+        await client.query('CREATE INDEX idx_document_chunks_document_id ON document_chunks(document_id)');
+      }
+      
       const result = await client.query(
         'INSERT INTO document_chunks (document_id, chunk_text, chunk_index) VALUES ($1, $2, $3) RETURNING *',
         [documentId, chunkText, chunkIndex]
@@ -255,6 +222,40 @@ class DocumentRepository {
         [documentId]
       );
       return result.rows;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Tìm kiếm tài liệu theo tên chính xác
+   * @param {string} name Tên tài liệu cần tìm
+   * @returns {Promise<Array>} Danh sách tài liệu tìm thấy
+   */
+  async searchDocumentsByName(name) {
+    const client = await pool.connect();
+    try {
+      // Xóa bỏ extension nếu cần để tìm kiếm chính xác hơn
+      const baseName = name.replace(/\.(pdf|docx?|xlsx?|pptx?|txt)$/i, '');
+      const searchName = `%${baseName}%`;
+      
+      const result = await client.query(
+        `SELECT * FROM document_metadata 
+         WHERE LOWER(dc_title) LIKE LOWER($1)
+         ORDER BY 
+           CASE 
+             WHEN LOWER(dc_title) = LOWER($2) THEN 1
+             ELSE 2
+           END,
+           date_created DESC
+         LIMIT 5`,
+        [searchName, name]
+      );
+      
+      return result.rows;
+    } catch (error) {
+      console.error('Error searching documents by name:', error);
+      return [];
     } finally {
       client.release();
     }

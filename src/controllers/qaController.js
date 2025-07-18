@@ -176,6 +176,93 @@ const askQuestion = async (req, res) => {
       referenceAnalysis: referenceResolution.analysis || {}
     };
 
+    // Xử lý tìm kiếm tài liệu liên quan đến tóm tắt nếu có
+    const documentSummaryRequest = processQuestion.toLowerCase().includes('tóm tắt') && 
+                                   (processQuestion.toLowerCase().includes('tài liệu') || 
+                                    processQuestion.toLowerCase().includes('document') || 
+                                    processQuestion.toLowerCase().includes('sơ đồ'));
+    
+    // Tìm kiếm tài liệu phù hợp theo tên nếu yêu cầu tóm tắt
+    let documentToSummarize = null;
+    if (documentSummaryRequest) {
+      // Lấy từ khóa chính từ câu hỏi (loại bỏ "tóm tắt", "tài liệu" và các từ phổ biến)
+      const keyTerms = processQuestion.toLowerCase()
+        .replace(/tóm tắt|tài liệu|document|sơ đồ|của|về|là gì|cho tôi|xem/g, '')
+        .trim()
+        .split(/\s+/)
+        .filter(term => term.length > 1);
+      
+      // Nếu có từ khóa hợp lệ, tìm kiếm trong repository
+      if (keyTerms.length > 0) {
+        try {
+          // Tìm kiếm trực tiếp từ document repository trước
+          // Lấy pattern tìm kiếm từ câu hỏi (ví dụ: nếu có số thứ tự, tên file cụ thể)
+          const filePattern = processQuestion.match(/["']([^"']+\.(pdf|docx?|xlsx?|pptx?|txt))["']/i)?.[1] || 
+                              processQuestion.match(/(\d+\.\s*[^.,;]+\.(pdf|docx?|xlsx?|pptx?|txt))/i)?.[1] ||
+                              null;
+          
+          let documents = [];
+          
+          // Nếu có tên file cụ thể, ưu tiên tìm theo tên
+          if (filePattern) {
+            console.log(`🔍 Tìm tài liệu theo pattern: ${filePattern}`);
+            documents = await documentRepository.searchDocumentsByName(filePattern);
+          } 
+          
+          // Nếu không có kết quả, tìm theo từ khóa
+          if (!documents || documents.length === 0) {
+            const searchQuery = keyTerms.join(' ');
+            console.log(`🔍 Tìm tài liệu theo từ khóa: ${searchQuery}`);
+            documents = await documentRepository.searchDocuments(searchQuery);
+          }
+          
+          if (documents && documents.length > 0) {
+            // Lấy tài liệu phù hợp nhất
+            documentToSummarize = documents[0];
+            console.log(`📄 Đã tìm thấy tài liệu: ${documentToSummarize.original_name || documentToSummarize.name}`);
+          }
+        } catch (error) {
+          console.error('Error searching for document:', error);
+        }
+      }
+      
+      // Backup: Nếu không tìm thấy từ repository, thử tìm trong integratedData
+      if (!documentToSummarize && integratedData.documents && integratedData.documents.length > 0) {
+        documentToSummarize = integratedData.documents.find(doc => {
+          const docName = doc.original_name ? doc.original_name.toLowerCase() : 
+                        (doc.name ? doc.name.toLowerCase() : '');
+          return keyTerms.some(term => docName.includes(term));
+        });
+      }
+      
+      // Nếu tìm thấy tài liệu phù hợp
+      if (documentToSummarize) {
+        // Tạo tóm tắt từ metadata
+        const documentSummary = `Thông tin tài liệu "${documentToSummarize.original_name || documentToSummarize.name}":
+- Loại tài liệu: ${documentToSummarize.category || documentToSummarize.type || 'Không có thông tin'}
+- ID: ${documentToSummarize.id}
+${documentToSummarize.page_count ? `- Số trang: ${documentToSummarize.page_count}\n` : ''}
+${documentToSummarize.file_size ? `- Dung lượng: ${documentToSummarize.file_size} bytes\n` : ''}
+${documentToSummarize.metadata && documentToSummarize.metadata.description ? `- Mô tả: ${documentToSummarize.metadata.description}\n` : ''}
+${documentToSummarize.created_at ? `- Ngày tạo: ${new Date(documentToSummarize.created_at).toLocaleDateString('vi-VN')}\n` : ''}
+
+${result.answer}`;
+
+        result.answer = documentSummary;
+        
+        // Đảm bảo tài liệu này nằm trong relevantDocuments
+        if (!result.relevantDocuments) {
+          result.relevantDocuments = [];
+        }
+        if (!result.relevantDocuments.some(doc => doc.id === documentToSummarize.id)) {
+          result.relevantDocuments.unshift({
+            ...documentToSummarize,
+            relevanceScore: 10 // Điểm cao nhất vì đây là tài liệu được yêu cầu cụ thể
+          });
+        }
+      }
+    }
+
     // Save the answer to conversation history
     await conversationService.saveMessage(
       actualSessionId, 
@@ -229,12 +316,21 @@ const askQuestion = async (req, res) => {
       }
     }
 
+    // Giới hạn số lượng relevantDocuments trả về (chỉ trả về 5 tài liệu có điểm liên quan cao nhất)
+    let filteredRelevantDocuments = [];
+    if (result.relevantDocuments && result.relevantDocuments.length > 0) {
+      // Sắp xếp theo điểm liên quan (relevanceScore) giảm dần và chỉ lấy tối đa 5 tài liệu
+      filteredRelevantDocuments = result.relevantDocuments
+        .sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0))
+        .slice(0, 5);
+    }
+
     res.json({
       success: true,
       sessionId: actualSessionId,
       question: question.trim(),
       answer: result.answer,
-      relevantDocuments: result.relevantDocuments || [],
+      relevantDocuments: filteredRelevantDocuments,
       responseTime: result.responseTime || (Date.now() - startTime),
       contextInfo: {
         hasReference: referenceResolution.hasReference,

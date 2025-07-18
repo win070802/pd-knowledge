@@ -394,6 +394,117 @@ const uploadDocument = async (req, res) => {
       }
     }
 
+    // ✨ NEW: Tạo document_metadata và knowledge_base từ document
+    try {
+      console.log(`🔄 Creating document_metadata and knowledge for document ${documentToSave.id}...`);
+      
+      // Import các module cần thiết
+      const { pool } = require('../config/database');
+      const knowledgeController = require('./knowledgeController');
+      
+      // Lấy thông tin công ty
+      let companyData = null;
+      if (finalCompanyId) {
+        const companyResult = await pool.query('SELECT * FROM companies WHERE id = $1', [finalCompanyId]);
+        if (companyResult.rows.length > 0) {
+          companyData = companyResult.rows[0];
+        }
+      }
+      
+      // Tạo document_metadata
+      try {
+        console.log(`📝 Creating document_metadata...`);
+        
+        // Chuẩn bị dữ liệu cho document_metadata
+        const metadataResult = await pool.query(`
+          INSERT INTO document_metadata (
+            dc_identifier,
+            dc_title,
+            dc_description,
+            dc_type,
+            dc_format,
+            dc_language,
+            dc_creator,
+            dc_subject,
+            dc_date,
+            record_identifier,
+            record_class,
+            record_status,
+            company_id,
+            organization_name,
+            department,
+            document_state,
+            keywords,
+            categories,
+            tags,
+            created_by,
+            extracted_text,
+            document_summary,
+            key_information
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+          RETURNING id
+        `, [
+          `DOC-${documentToSave.id}`,
+          originalName,
+          processingResult.structureAnalysis.summary || `Document ${originalName}`,
+          category,
+          'application/pdf',
+          'vi',
+          req.user ? [req.user.username] : ['system'],
+          processingResult.structureAnalysis.keyTerms || [],
+          new Date().toISOString(),
+          `REC-${documentToSave.id}`,
+          category,
+          'active',
+          finalCompanyId,
+          companyData ? companyData.company_name : 'Unknown',
+          companyData && companyData.departments ? Object.keys(companyData.departments)[0] : null,
+          'published',
+          processingResult.structureAnalysis.keyTerms || [],
+          [category],
+          processingResult.structureAnalysis.mainTopics || [],
+          req.user ? req.user.username : 'system',
+          contentText,
+          processingResult.structureAnalysis.summary || '',
+          JSON.stringify({
+            documentId: documentToSave.id,
+            fileName: fileName,
+            originalName: originalName,
+            fileSize: fileSize,
+            pageCount: pageCount,
+            uploadDate: new Date().toISOString()
+          })
+        ]);
+        
+        console.log(`✅ Created document_metadata with ID: ${metadataResult.rows[0].id}`);
+      } catch (metadataError) {
+        console.error('❌ Error creating document_metadata:', metadataError);
+        // Tiếp tục quá trình, không dừng lại vì lỗi metadata
+      }
+      
+      // Tạo knowledge_base entries từ document
+      try {
+        if (processingResult.structureAnalysis.canAnswerQuestions && processingResult.structureAnalysis.canAnswerQuestions.length > 0) {
+          console.log(`🧠 Extracting knowledge from document...`);
+          
+          const knowledgeEntries = await knowledgeController.createKnowledgeFromDocument(documentToSave.id, finalCompanyId);
+          
+          if (knowledgeEntries && knowledgeEntries.length > 0) {
+            console.log(`✅ Created ${knowledgeEntries.length} knowledge entries from document`);
+          } else {
+            console.log(`ℹ️ No knowledge entries created from document`);
+          }
+        }
+      } catch (knowledgeError) {
+        console.error('❌ Error creating knowledge from document:', knowledgeError);
+        // Tiếp tục quá trình, không dừng lại vì lỗi knowledge
+      }
+      
+    } catch (error) {
+      console.error('⚠️ Error in document post-processing:', error);
+      // Tiếp tục quá trình, không dừng lại vì lỗi post-processing
+    }
+
     // Clean up temp file and OCR files
     if (fs.existsSync(tempFilePath)) {
       fs.unlinkSync(tempFilePath);
