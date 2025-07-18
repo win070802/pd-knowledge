@@ -244,7 +244,7 @@ class DataIntegrationService {
   }
 
   /**
-   * Truy vấn dữ liệu từ tài liệu
+   * Truy vấn dữ liệu từ document_metadata
    * @param {string} question - Câu hỏi của người dùng
    * @param {Object} analysis - Kết quả phân tích câu hỏi
    * @returns {Array} Danh sách tài liệu liên quan
@@ -254,7 +254,20 @@ class DataIntegrationService {
       // Xử lý đặc biệt cho câu hỏi danh sách tài liệu theo công ty
       if (analysis.intent === 'list_documents' && analysis.company) {
         console.log(`📑 Fetching document list for company: ${analysis.company}`);
-        return await db.getDocumentsByCompany(analysis.company);
+        const { pool } = require('../../config/database');
+        const client = await pool.connect();
+        try {
+          const result = await client.query(`
+            SELECT d.*, c.company_code as company_code, c.company_name as company_name 
+            FROM document_metadata d 
+            JOIN companies c ON d.company_id = c.id 
+            WHERE c.company_code = $1 
+            ORDER BY d.date_created DESC
+          `, [analysis.company]);
+          return result.rows;
+        } finally {
+          client.release();
+        }
       }
       
       // Tìm kiếm tài liệu với các bộ lọc
@@ -262,7 +275,7 @@ class DataIntegrationService {
       
       // Lọc theo công ty
       if (analysis.company) {
-        filters.companyId = analysis.company;
+        filters.company_id = analysis.company;
       }
       
       // Lọc theo phòng ban (nếu có)
@@ -272,13 +285,55 @@ class DataIntegrationService {
       
       // Lọc theo chủ đề (nếu có)
       if (analysis.topic) {
-        filters.category = analysis.topic;
+        filters.dc_type = analysis.topic;
       }
       
-      // Thực hiện tìm kiếm
-      const documents = await db.searchDocuments(question, filters);
-      
-      return documents;
+      // Thực hiện tìm kiếm trong document_metadata
+      const { pool } = require('../../config/database');
+      const client = await pool.connect();
+      try {
+        // Chuẩn bị từ khóa tìm kiếm
+        const searchPattern = `%${question.toLowerCase().replace(/\s+/g, '%')}%`;
+        
+        // Xây dựng câu truy vấn động với các bộ lọc
+        let query = `
+          SELECT * FROM document_metadata 
+          WHERE (LOWER(dc_title) LIKE $1 OR 
+                LOWER(dc_description) LIKE $1 OR
+                LOWER(document_summary) LIKE $1 OR
+                extracted_text LIKE $1)
+        `;
+        
+        const queryParams = [searchPattern];
+        let paramIndex = 2;
+        
+        // Thêm các điều kiện lọc
+        if (filters.company_id) {
+          query += ` AND company_id = $${paramIndex}`;
+          queryParams.push(filters.company_id);
+          paramIndex++;
+        }
+        
+        if (filters.department) {
+          query += ` AND department = $${paramIndex}`;
+          queryParams.push(filters.department);
+          paramIndex++;
+        }
+        
+        if (filters.dc_type) {
+          query += ` AND dc_type = $${paramIndex}`;
+          queryParams.push(filters.dc_type);
+          paramIndex++;
+        }
+        
+        // Thêm sắp xếp và giới hạn
+        query += ` ORDER BY date_created DESC LIMIT 5`;
+        
+        const result = await client.query(query, queryParams);
+        return result.rows;
+      } finally {
+        client.release();
+      }
     } catch (error) {
       console.error('Error fetching documents:', error);
       return [];
@@ -293,17 +348,66 @@ class DataIntegrationService {
    */
   async fetchKnowledgeBase(question, analysis) {
     try {
-      // Tìm kiếm trong knowledge base
-      const knowledgeEntries = await db.searchKnowledgeBase(question);
+      const { pool } = require('../../config/database');
+      const client = await pool.connect();
       
-      // Lọc theo công ty nếu có
-      if (analysis.company && knowledgeEntries.length > 0) {
-        return knowledgeEntries.filter(entry => 
-          !entry.company_id || entry.company_id === analysis.company
-        );
+      try {
+        console.log(`🔍 Searching knowledge_base for: "${question}"`);
+        
+        // Chuẩn bị pattern tìm kiếm
+        const searchWords = question.toLowerCase()
+          .split(/\s+/)
+          .filter(word => word.length > 3)
+          .map(word => `%${word}%`);
+        
+        if (searchWords.length === 0) {
+          searchWords.push(`%${question.toLowerCase()}%`);
+        }
+        
+        // Tạo query với nhiều điều kiện OR
+        let query = `
+          SELECT kb.*, c.company_code 
+          FROM knowledge_base kb
+          LEFT JOIN companies c ON kb.company_id = c.id
+          WHERE kb.is_active = true AND (
+        `;
+        
+        const conditions = [];
+        const params = [];
+        let paramIndex = 1;
+        
+        // Tạo điều kiện tìm kiếm cho mỗi từ
+        for (const word of searchWords) {
+          conditions.push(`LOWER(kb.question) LIKE $${paramIndex} OR LOWER(kb.answer) LIKE $${paramIndex}`);
+          params.push(word);
+          paramIndex++;
+        }
+        
+        query += conditions.join(' OR ') + ')';
+        
+        // Thêm điều kiện lọc theo công ty nếu có
+        if (analysis.company) {
+          query += ` AND (c.company_code = $${paramIndex} OR kb.company_id IS NULL)`;
+          params.push(analysis.company);
+          paramIndex++;
+        }
+        
+        // Giới hạn kết quả và sắp xếp
+        query += ` ORDER BY 
+          CASE WHEN kb.company_id IS NOT NULL THEN 0 ELSE 1 END, 
+          kb.created_at DESC 
+          LIMIT 10`;
+        
+        console.log(`📝 Executing query: ${query}`);
+        console.log(`📝 With params: ${params.join(', ')}`);
+        
+        const result = await client.query(query, params);
+        console.log(`📚 Found ${result.rows.length} knowledge entries`);
+        
+        return result.rows;
+      } finally {
+        client.release();
       }
-      
-      return knowledgeEntries;
     } catch (error) {
       console.error('Error fetching knowledge base:', error);
       return [];
@@ -319,9 +423,29 @@ class DataIntegrationService {
     try {
       if (!companyCode) return null;
       
-      // Tìm công ty theo mã
-      const companies = await db.getCompanies();
-      return companies.find(company => company.code === companyCode) || null;
+      const { pool } = require('../../config/database');
+      const client = await pool.connect();
+      
+      try {
+        console.log(`🔍 Fetching company info for code: "${companyCode}"`);
+        
+        const query = `
+          SELECT * FROM companies 
+          WHERE UPPER(company_code) = UPPER($1)
+        `;
+        
+        const result = await client.query(query, [companyCode]);
+        
+        if (result.rows.length > 0) {
+          console.log(`✅ Found company: ${result.rows[0].company_name}`);
+          return result.rows[0];
+        } else {
+          console.log(`⚠️ Company with code "${companyCode}" not found`);
+          return null;
+        }
+      } finally {
+        client.release();
+      }
     } catch (error) {
       console.error('Error fetching company info:', error);
       return null;
@@ -338,9 +462,69 @@ class DataIntegrationService {
     try {
       if (!department) return null;
       
-      // Tìm thông tin phòng ban
-      const departmentInfo = await db.getDepartmentInfo(department, companyCode);
-      return departmentInfo;
+      const { pool } = require('../../config/database');
+      const client = await pool.connect();
+      
+      try {
+        console.log(`🔍 Fetching department info for: "${department}" in company "${companyCode || 'any'}"`);
+        
+        let query = '';
+        let params = [];
+        
+        if (companyCode) {
+          // Tìm phòng ban trong công ty cụ thể
+          query = `
+            SELECT c.id as company_id, c.company_code, c.company_name, 
+                   c.departments->>$1 as department_info
+            FROM companies c
+            WHERE UPPER(c.company_code) = UPPER($2)
+            AND c.departments ? $1
+          `;
+          params = [department, companyCode];
+        } else {
+          // Tìm phòng ban trong tất cả các công ty
+          query = `
+            SELECT c.id as company_id, c.company_code, c.company_name, 
+                   c.departments->>$1 as department_info
+            FROM companies c
+            WHERE c.departments ? $1
+            LIMIT 1
+          `;
+          params = [department];
+        }
+        
+        const result = await client.query(query, params);
+        
+        if (result.rows.length > 0) {
+          const row = result.rows[0];
+          let departmentInfo = null;
+          
+          try {
+            departmentInfo = JSON.parse(row.department_info);
+          } catch (e) {
+            departmentInfo = { name: row.department_info };
+          }
+          
+          const info = {
+            name: departmentInfo.name || department,
+            code: departmentInfo.code || department,
+            head: departmentInfo.head,
+            company: {
+              id: row.company_id,
+              code: row.company_code,
+              name: row.company_name
+            }
+          };
+          
+          console.log(`✅ Found department: ${info.name} in ${info.company.name}`);
+          return info;
+        } else {
+          console.log(`⚠️ Department "${department}" not found`);
+          return null;
+        }
+      } finally {
+        client.release();
+      }
     } catch (error) {
       console.error('Error fetching department info:', error);
       return null;
@@ -354,17 +538,34 @@ class DataIntegrationService {
    */
   async fetchConstraints(question) {
     try {
-      // Lấy tất cả constraints
-      const constraints = await db.getConstraints();
+      const { pool } = require('../../config/database');
+      const client = await pool.connect();
       
-      // Tìm constraint phù hợp
-      for (const constraint of constraints) {
-        if (this.matchConstraint(question, constraint.question)) {
-          return constraint;
+      try {
+        console.log(`🔍 Checking constraints for question: "${question}"`);
+        
+        // Lấy tất cả constraints
+        const query = `
+          SELECT * FROM constraints 
+          WHERE is_active = true
+        `;
+        
+        const result = await client.query(query);
+        const constraints = result.rows;
+        
+        // Tìm constraint phù hợp
+        for (const constraint of constraints) {
+          if (this.matchConstraint(question, constraint.question)) {
+            console.log(`✅ Found matching constraint: "${constraint.question}"`);
+            return constraint;
+          }
         }
+        
+        console.log('⚠️ No matching constraint found');
+        return null;
+      } finally {
+        client.release();
       }
-      
-      return null;
     } catch (error) {
       console.error('Error fetching constraints:', error);
       return null;

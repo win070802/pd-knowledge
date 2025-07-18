@@ -215,63 +215,77 @@ TRÁLỜI:`;
       // Ưu tiên mapping structured metadata
       let context = '';
       relevantDocs.forEach((doc, index) => {
-        context += `\n[Tài liệu ${index + 1}: ${doc.original_name}]\n`;
-        if (doc.metadata) {
-          // Ưu tiên các trường metadata structured
-          if (doc.metadata.sections && doc.metadata.sections.length > 0) {
-            context += `Sections:\n`;
-            doc.metadata.sections.forEach((section, i) => {
+        context += `\n[Tài liệu ${index + 1}: ${doc.dc_title || doc.original_name || "Không có tên"}]\n`;
+        
+        // Thêm thông tin từ document_metadata
+        if (doc.dc_description) {
+          context += `Mô tả: ${doc.dc_description}\n`;
+        }
+        
+        if (doc.dc_subject && doc.dc_subject.length > 0) {
+          context += `Chủ đề: ${Array.isArray(doc.dc_subject) ? doc.dc_subject.join(', ') : doc.dc_subject}\n`;
+        }
+        
+        if (doc.dc_type) {
+          context += `Loại tài liệu: ${doc.dc_type}\n`;
+        }
+        
+        if (doc.document_summary) {
+          context += `Tóm tắt: ${doc.document_summary}\n`;
+        }
+        
+        if (doc.keywords && doc.keywords.length > 0) {
+          context += `Từ khóa: ${Array.isArray(doc.keywords) ? doc.keywords.join(', ') : doc.keywords}\n`;
+        }
+        
+        if (doc.categories && doc.categories.length > 0) {
+          context += `Danh mục: ${Array.isArray(doc.categories) ? doc.categories.join(', ') : doc.categories}\n`;
+        }
+        
+        if (doc.tags && doc.tags.length > 0) {
+          context += `Tags: ${Array.isArray(doc.tags) ? doc.tags.join(', ') : doc.tags}\n`;
+        }
+        
+        if (doc.entities) {
+          context += `Entities: ${JSON.stringify(doc.entities)}\n`;
+        }
+        
+        if (doc.key_values) {
+          context += `Key-Value: ${JSON.stringify(doc.key_values)}\n`;
+        }
+        
+        if (doc.document_sections) {
+          context += `Sections:\n`;
+          if (Array.isArray(doc.document_sections)) {
+            doc.document_sections.forEach((section, i) => {
               context += `- ${section.title ? section.title + ': ' : ''}${section.content || ''}\n`;
-              if (section.logic) context += `  Logic: ${section.logic}\n`;
-              if (section.conditions) context += `  Điều kiện: ${Array.isArray(section.conditions) ? section.conditions.join('; ') : section.conditions}\n`;
-              if (section.references) context += `  Tham chiếu: ${Array.isArray(section.references) ? section.references.join('; ') : section.references}\n`;
-              if (section.tables) context += `  Bảng: ${JSON.stringify(section.tables)}\n`;
-              if (section.procedures) context += `  Quy trình: ${JSON.stringify(section.procedures)}\n`;
             });
-          }
-          if (doc.metadata.procedures && doc.metadata.procedures.length > 0) {
-            context += `Procedures:\n`;
-            doc.metadata.procedures.forEach((proc, i) => {
-              context += `- Bước ${proc.step}: ${proc.description || ''} (${proc.details || ''})\n`;
-              if (proc.conditions) context += `  Điều kiện: ${Array.isArray(proc.conditions) ? proc.conditions.join('; ') : proc.conditions}\n`;
-            });
-          }
-          if (doc.metadata.logic && doc.metadata.logic.length > 0) {
-            context += `Logic đặc thù:\n`;
-            context += Array.isArray(doc.metadata.logic) ? doc.metadata.logic.join('\n') : doc.metadata.logic + '\n';
-          }
-          if (doc.metadata.conditions && doc.metadata.conditions.length > 0) {
-            context += `Điều kiện áp dụng:\n`;
-            context += Array.isArray(doc.metadata.conditions) ? doc.metadata.conditions.join('\n') : doc.metadata.conditions + '\n';
-          }
-          if (doc.metadata.tables && doc.metadata.tables.length > 0) {
-            context += `Bảng biểu:\n`;
-            context += JSON.stringify(doc.metadata.tables) + '\n';
-          }
-          if (doc.metadata.controls && doc.metadata.controls.length > 0) {
-            context += `Biện pháp kiểm soát:\n`;
-            context += Array.isArray(doc.metadata.controls) ? doc.metadata.controls.join('\n') : doc.metadata.controls + '\n';
-          }
-          if (doc.metadata.references && doc.metadata.references.length > 0) {
-            context += `Tham chiếu liên quan:\n`;
-            context += Array.isArray(doc.metadata.references) ? doc.metadata.references.join('\n') : doc.metadata.references + '\n';
-          }
-          if (doc.metadata.glossary && doc.metadata.glossary.length > 0) {
-            context += `Định nghĩa thuật ngữ:\n`;
-            context += Array.isArray(doc.metadata.glossary) ? doc.metadata.glossary.join('\n') : doc.metadata.glossary + '\n';
-          }
-          if (doc.metadata.roles && doc.metadata.roles.length > 0) {
-            context += `Vai trò, trách nhiệm:\n`;
-            context += Array.isArray(doc.metadata.roles) ? doc.metadata.roles.join('\n') : doc.metadata.roles + '\n';
-          }
-          if (doc.metadata.responsibilities && doc.metadata.responsibilities.length > 0) {
-            context += `Trách nhiệm:\n`;
-            context += Array.isArray(doc.metadata.responsibilities) ? doc.metadata.responsibilities.join('\n') : doc.metadata.responsibilities + '\n';
+          } else {
+            context += JSON.stringify(doc.document_sections) + '\n';
           }
         }
-        // Fallback: nếu metadata không đủ, lấy content_text
-        if ((!doc.metadata || Object.keys(doc.metadata).length === 0) && doc.content_text) {
-          context += doc.content_text.substring(0, 2000) + '\n';
+        
+        if (doc.common_questions) {
+          context += `Câu hỏi thường gặp:\n`;
+          if (Array.isArray(doc.common_questions)) {
+            doc.common_questions.forEach((qa, i) => {
+              context += `- Q: ${qa.question}\n  A: ${qa.answer}\n`;
+            });
+          } else {
+            context += JSON.stringify(doc.common_questions) + '\n';
+          }
+        }
+        
+        // Thêm nội dung trích xuất
+        if (doc.extracted_text) {
+          context += `Nội dung:\n${doc.extracted_text.substring(0, 2000)}\n`;
+        } else if (doc.content_text) {
+          context += `Nội dung:\n${doc.content_text.substring(0, 2000)}\n`;
+        }
+        
+        // Thêm key_information nếu có
+        if (doc.key_information) {
+          context += `Thông tin chính: ${JSON.stringify(doc.key_information)}\n`;
         }
       });
       
@@ -330,7 +344,7 @@ TRÁLỜI:`;
         documentIds,
         relevantDocuments: relevantDocs.map(doc => ({
           id: doc.id,
-          name: doc.original_name,
+          name: doc.dc_title || doc.original_name || doc.name || "Không có tên",
           relevanceScore: doc.relevanceScore
         })),
         responseTime
@@ -448,6 +462,159 @@ THÔNG TIN TRÍCH XUẤT:`;
     } catch (error) {
       console.error('Error in extractKeyInfo:', error);
       throw error;
+    }
+  }
+
+  // Main method to ask questions
+  async askQuestion(question, options = {}) {
+    const startTime = Date.now();
+    try {
+      console.log(`🔍 Processing question: "${question}"`);
+      
+      // Extract options
+      const { 
+        documents = [], 
+        knowledgeEntries = [],
+        companyInfo = null,
+        departmentInfo = null,
+        analysisResult = {}
+      } = options;
+
+      // Log data sources
+      console.log(`📊 Data sources: ${documents.length} documents, ${knowledgeEntries.length} knowledge entries`);
+      if (companyInfo) console.log(`🏢 Company info: ${companyInfo.company_name || companyInfo.name}`);
+      if (departmentInfo) console.log(`🏢 Department info: ${departmentInfo.name}`);
+      
+      // Debug log documents
+      if (documents.length > 0) {
+        console.log(`🔍 Document IDs: ${documents.map(doc => doc.id).join(', ')}`);
+        console.log(`🔍 Document titles: ${documents.map(doc => doc.dc_title || doc.original_name || "Không có tên").join(', ')}`);
+      }
+      
+      // Check for document summarization request
+      const isSummarizeRequest = question.toLowerCase().includes('tóm tắt') && 
+                               (question.toLowerCase().includes('tài liệu') || 
+                                question.toLowerCase().includes('document'));
+      
+      if (isSummarizeRequest && documents.length > 0) {
+        console.log(`📑 Handling document summarization request`);
+        const doc = documents[0]; // Use the first document
+        
+        // Tạo tóm tắt từ metadata của document
+        let summary = `Tóm tắt tài liệu "${doc.dc_title || doc.original_name || "Không có tên"}":\n\n`;
+        
+        // Thêm thông tin cơ bản
+        summary += `- Loại tài liệu: ${doc.dc_type || "Không xác định"}\n`;
+        if (doc.dc_date) summary += `- Ngày tạo: ${new Date(doc.dc_date).toLocaleDateString('vi-VN')}\n`;
+        if (doc.dc_creator && doc.dc_creator.length) summary += `- Tác giả: ${Array.isArray(doc.dc_creator) ? doc.dc_creator.join(', ') : doc.dc_creator}\n`;
+        if (doc.dc_publisher) summary += `- Nhà xuất bản: ${doc.dc_publisher}\n`;
+        if (doc.dc_description) summary += `- Mô tả: ${doc.dc_description}\n`;
+        if (doc.file_size) summary += `- Kích thước: ${doc.file_size} bytes\n`;
+        
+        // Thêm từ khóa và chủ đề
+        if (doc.keywords && doc.keywords.length) {
+          summary += `- Từ khóa: ${Array.isArray(doc.keywords) ? doc.keywords.join(', ') : doc.keywords}\n`;
+        }
+        if (doc.dc_subject && doc.dc_subject.length) {
+          summary += `- Chủ đề: ${Array.isArray(doc.dc_subject) ? doc.dc_subject.join(', ') : doc.dc_subject}\n`;
+        }
+        
+        // Thêm tóm tắt nội dung nếu có
+        if (doc.document_summary) {
+          summary += `\nTóm tắt nội dung:\n${doc.document_summary}\n`;
+        }
+        
+        // Nếu không có tóm tắt sẵn, tạo tóm tắt từ nội dung
+        if (!doc.document_summary && (doc.extracted_text || doc.content_text)) {
+          const content = doc.extracted_text || doc.content_text;
+          const prompt = `
+Hãy tóm tắt nội dung của tài liệu sau một cách ngắn gọn và súc tích:
+
+TÊN TÀI LIỆU: ${doc.dc_title || doc.original_name || "Không có tên"}
+
+NỘI DUNG:
+${content.substring(0, 4000)}
+
+Yêu cầu:
+- Tóm tắt bằng tiếng Việt
+- Nêu rõ các điểm chính
+- Độ dài khoảng 200-300 từ
+- Sử dụng bullet points nếu cần
+
+TÓM TẮT:`;
+
+          try {
+            const result = await this.model.generateContent(prompt);
+            const response = await result.response;
+            summary += `\nTóm tắt nội dung:\n${response.text()}\n`;
+          } catch (error) {
+            console.error('Error generating summary:', error);
+            summary += `\nKhông thể tạo tóm tắt tự động.\n`;
+          }
+        }
+        
+        // Thêm thông tin bổ sung nếu có
+        if (doc.key_information) {
+          summary += `\nThông tin chính:\n`;
+          try {
+            const keyInfo = typeof doc.key_information === 'string' ? 
+                          JSON.parse(doc.key_information) : doc.key_information;
+            
+            Object.entries(keyInfo).forEach(([key, value]) => {
+              if (typeof value !== 'object') {
+                summary += `- ${key}: ${value}\n`;
+              } else if (value !== null) {
+                summary += `- ${key}: ${JSON.stringify(value)}\n`;
+              }
+            });
+          } catch (error) {
+            console.error('Error processing key_information:', error);
+            summary += `- ${doc.key_information}\n`;
+          }
+        }
+        
+        console.log(`✅ Generated summary for document: ${doc.id}`);
+        
+        return {
+          answer: summary,
+          documentIds: [doc.id],
+          relevantDocuments: [doc],
+          responseTime: Date.now() - startTime
+        };
+      }
+      
+      // Process with documents if available (priority)
+      if (documents.length > 0) {
+        console.log(`📄 Processing with ${documents.length} documents`);
+        return await this.processWithDocuments(question, documents, startTime);
+      }
+      
+      // Process with knowledge base entries if available
+      if (knowledgeEntries.length > 0) {
+        console.log(`📚 Processing with ${knowledgeEntries.length} knowledge entries`);
+        return await this.processWithKnowledge(question, knowledgeEntries, startTime);
+      }
+      
+      // Fallback to general chatbot
+      console.log(`💬 No specific data sources, using general chatbot`);
+      const answer = await this.handleGeneralChatbotQuestion(question);
+      
+      return {
+        answer,
+        documentIds: [],
+        relevantDocuments: [],
+        responseTime: Date.now() - startTime
+      };
+      
+    } catch (error) {
+      console.error('Error in askQuestion:', error);
+      return {
+        answer: 'Xin lỗi, tôi không thể trả lời câu hỏi này do lỗi kỹ thuật. Vui lòng thử lại sau.',
+        documentIds: [],
+        relevantDocuments: [],
+        responseTime: Date.now() - startTime,
+        error: error.message
+      };
     }
   }
 }

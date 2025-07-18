@@ -395,7 +395,7 @@ const extractKeyInfo = async (req, res) => {
 const getConversationHistory = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { limit } = req.query;
+    const { limit } = req.query;  
 
     if (!sessionId) {
       return res.status(400).json({ success: false, error: 'Session ID is required' });
