@@ -10,152 +10,62 @@ class QuestionAnalysisService {
   }
 
   /**
-   * Phân tích câu hỏi để xác định intent, chủ đề và nguồn dữ liệu phù hợp
+   * Phân tích câu hỏi để xác định intent và nguồn dữ liệu
    * @param {string} question - Câu hỏi của người dùng
    * @param {string} sessionId - ID phiên hội thoại
    * @returns {Object} Kết quả phân tích
    */
-  async analyzeQuestion(question, sessionId = null) {
+  async analyzeQuestion(question, sessionId) {
     try {
       console.log(`🔍 Analyzing question: "${question}"`);
       
-      // Kiểm tra nội dung nhạy cảm
-      const isSensitive = await this.contentClassifier.isSensitiveContent(question);
-      if (isSensitive) {
-        return {
-          intent: 'sensitive_content',
-          source: 'none',
-          topic: 'sensitive',
-          company: null,
-          department: null,
-          confidence: 100,
-          sessionContext: {},
-          error: 'Câu hỏi chứa nội dung nhạy cảm không được phép'
-        };
-      }
+      // Lấy context từ session
+      const context = await this.getSessionContext(sessionId);
       
-      // Phân tích ngữ cảnh phiên hội thoại
-      let sessionContext = {};
-      if (sessionId) {
-        sessionContext = await this.getSessionContext(sessionId);
-      }
-
-      // --- BẮT ĐẦU: Phát hiện hỏi về thứ tự tài liệu ---
-      // Regex cho "tài liệu đầu tiên", "tài liệu thứ hai", ...
-      const indexPattern = /tài liệu (đầu tiên|thứ (\d+))/i;
-      const match = question.match(indexPattern);
-      if (match && sessionContext && Array.isArray(sessionContext.lastDocumentList)) {
-        let index = 0;
-        if (match[1] === 'đầu tiên') {
-          index = 0;
-        } else if (match[2]) {
-          index = parseInt(match[2], 10) - 1;
-        }
-        if (index >= 0 && index < sessionContext.lastDocumentList.length) {
-          return {
-            intent: 'document_by_index',
-            source: 'documents',
-            documentId: sessionContext.lastDocumentList[index],
-            index: index,
-            confidence: 95,
-            sessionContext: sessionContext,
-            error: null
-          };
-        } else {
-          return {
-            intent: 'document_by_index',
-            source: 'documents',
-            documentId: null,
-            index: index,
-            confidence: 60,
-            sessionContext: sessionContext,
-            error: 'Không tìm thấy tài liệu theo thứ tự yêu cầu trong danh sách trước đó.'
-          };
-        }
-      }
-      // --- KẾT THÚC: Phát hiện hỏi về thứ tự tài liệu ---
+      // Chuẩn bị dữ liệu cho phân tích
+      const questionLower = question.toLowerCase();
       
-      // Kiểm tra nếu câu hỏi là yêu cầu danh sách tài liệu theo công ty
-      const documentListPattern = /(danh sách|liệt kê|list|show|hiển thị|xem).*(tài liệu|document|file|văn bản|quy định|quy trình).*(của|thuộc|trong|ở|tại|liên quan đến|about).*?(PDH|PDI|PDE|PDHOS|RHS)/i;
-      const documentListPatternCompanyFirst = /(PDH|PDI|PDE|PDHOS|RHS).*(danh sách|liệt kê|list|show|hiển thị|xem).*(tài liệu|document|file|văn bản|quy định|quy trình)/i;
+      // Phân tích intent
+      const intent = this.detectIntent(questionLower);
       
-      if (documentListPattern.test(question) || documentListPatternCompanyFirst.test(question)) {
-        const company = this.extractCompanyFromQuestion(question);
-        console.log(`📑 Detected document list request for company: ${company}`);
-        return {
-          intent: 'list_documents',
-          source: 'documents',
-          topic: null,
-          company: company,
-          department: this.detectDepartment(question),
-          confidence: 95,
-          sessionContext: sessionContext,
-          error: null
-        };
-      }
+      // Phân tích nguồn dữ liệu
+      const source = this.detectDataSource(questionLower, intent);
       
-      // Kiểm tra nếu câu hỏi chứa tên tài liệu cụ thể
-      const hasSpecificDocumentName = this.detectSpecificDocument(question);
-      if (hasSpecificDocumentName) {
-        console.log(`📄 Detected specific document name in question`);
-        return {
-          intent: 'document_specific',
-          source: 'documents',
-          topic: this.detectTopic(question),
-          company: this.extractCompanyFromQuestion(question),
-          department: this.detectDepartment(question),
-          confidence: 90,
-          sessionContext: sessionContext,
-          error: null
-        };
-      }
+      // Phân tích chủ đề
+      const topic = this.detectTopic(questionLower);
       
-      // Kiểm tra nếu là câu hỏi chung không liên quan đến tài liệu
-      const isGeneralQuestion = this.contentClassifier.isGeneralQuestion(question);
-      if (isGeneralQuestion && !question.toLowerCase().includes('công ty') && !question.toLowerCase().includes('tài liệu')) {
-        console.log(`ℹ️ Detected general knowledge question`);
-        return {
-          intent: 'general_question',
-          source: 'constraints',
-          topic: 'general_knowledge',
-          company: null,
-          department: null,
-          confidence: 85,
-          sessionContext: sessionContext,
-          error: null
-        };
-      }
+      // Phân tích công ty
+      const company = await this.detectCompany(questionLower);
       
-      // Phân tích intent và chủ đề của câu hỏi
-      const intentAnalysis = await this.analyzeQuestionIntent(question);
+      // Phân tích phòng ban
+      const department = this.detectDepartment(questionLower);
       
-      // Phát hiện phòng ban liên quan
-      const department = this.detectDepartment(question);
+      // Tính toán độ tin cậy
+      const confidence = this.calculateConfidence(intent, source, topic, company, department);
       
-      // Xác định nguồn dữ liệu phù hợp
-      const source = this.determineDataSource(intentAnalysis, question);
+      console.log(`✅ Analysis result:`, { intent, source, topic, company, department, confidence });
       
       return {
-        intent: intentAnalysis.intent,
-        source: source,
-        topic: intentAnalysis.category,
-        company: intentAnalysis.company,
-        department: department,
-        confidence: intentAnalysis.confidence,
-        sessionContext: sessionContext,
+        intent,
+        source,
+        topic,
+        company,
+        department,
+        confidence,
+        sessionContext: context,
         error: null
       };
     } catch (error) {
       console.error('Error analyzing question:', error);
       return {
-        intent: 'general_question',
-        source: 'constraints',
+        intent: 'unknown',
+        source: 'unknown',
         topic: null,
         company: null,
         department: null,
-        confidence: 30,
+        confidence: 0,
         sessionContext: {},
-        error: 'Lỗi khi phân tích câu hỏi'
+        error: error.message
       };
     }
   }
@@ -289,6 +199,73 @@ Chỉ trả về JSON, không giải thích:`;
   }
   
   /**
+   * Phát hiện intent từ câu hỏi
+   * @param {string} question - Câu hỏi của người dùng
+   * @returns {string} Intent của câu hỏi
+   */
+  detectIntent(question) {
+    // Kiểm tra intent danh sách tài liệu
+    if (/(danh sách|liệt kê|list|show|hiển thị|xem).*(tài liệu|document|file|văn bản|quy định|quy trình)/i.test(question)) {
+      return 'list_documents';
+    }
+    
+    // Kiểm tra intent tìm kiếm tài liệu cụ thể
+    if (/(tìm|search|look for|find).*(tài liệu|document|file|văn bản|quy định|quy trình)/i.test(question)) {
+      return 'search_document';
+    }
+    
+    // Kiểm tra intent tóm tắt tài liệu
+    if (/(tóm tắt|summary|summarize|tóm lược).*(tài liệu|document|file|văn bản|quy định|quy trình)/i.test(question)) {
+      return 'summarize_document';
+    }
+    
+    // Kiểm tra intent thông tin công ty
+    if (/(thông tin|information|info|giới thiệu|về).*(công ty|company)/i.test(question)) {
+      return 'company_info';
+    }
+    
+    // Kiểm tra intent hỏi về người lãnh đạo
+    if (/(ai|who|người nào).*(giám đốc|ceo|chủ tịch|chairman|lãnh đạo|leader)/i.test(question)) {
+      return 'leadership_info';
+    }
+    
+    // Mặc định là câu hỏi chung
+    return 'general_question';
+  }
+
+  /**
+   * Phát hiện nguồn dữ liệu từ câu hỏi và intent
+   * @param {string} question - Câu hỏi của người dùng
+   * @param {string} intent - Intent của câu hỏi
+   * @returns {string} Nguồn dữ liệu
+   */
+  detectDataSource(question, intent) {
+    // Nếu câu hỏi liên quan đến tài liệu
+    if (/(tài liệu|document|file|văn bản|quy định|quy trình)/i.test(question) || 
+        intent === 'list_documents' || 
+        intent === 'search_document' || 
+        intent === 'summarize_document') {
+      return 'documents';
+    }
+    
+    // Nếu câu hỏi liên quan đến thông tin công ty
+    if (/(công ty|company|tổ chức|organization)/i.test(question) || 
+        intent === 'company_info' || 
+        intent === 'leadership_info') {
+      return 'knowledge_base';
+    }
+    
+    // Nếu có cả hai, sử dụng cả hai nguồn
+    if (/(tài liệu|document).*(công ty|company)/i.test(question) || 
+        /(công ty|company).*(tài liệu|document)/i.test(question)) {
+      return 'hybrid';
+    }
+    
+    // Mặc định sử dụng constraints
+    return 'constraints';
+  }
+
+  /**
    * Phát hiện phòng ban từ câu hỏi
    * @param {string} question - Câu hỏi cần phân tích
    * @returns {string|null} Tên phòng ban hoặc null
@@ -320,47 +297,73 @@ Chỉ trả về JSON, không giải thích:`;
   }
   
   /**
-   * Xác định nguồn dữ liệu phù hợp cho câu hỏi
-   * @param {Object} intentAnalysis - Kết quả phân tích intent
-   * @param {string} question - Câu hỏi gốc
-   * @returns {string} Nguồn dữ liệu (documents, knowledge, constraints, hybrid)
+   * Phát hiện chủ đề từ câu hỏi
+   * @param {string} question - Câu hỏi của người dùng
+   * @returns {string|null} Chủ đề hoặc null nếu không tìm thấy
    */
-  determineDataSource(intentAnalysis, question) {
-    // Kiểm tra câu hỏi chung chung
-    if (this.contentClassifier.isGeneralQuestion(question)) {
-      return 'constraints';
+  detectTopic(question) {
+    // Danh sách các chủ đề và pattern tương ứng
+    const topics = [
+      { pattern: /(quy trình|process|procedure|workflow)/i, topic: 'process' },
+      { pattern: /(quy định|regulation|rule|policy)/i, topic: 'regulation' },
+      { pattern: /(báo cáo|report|reporting)/i, topic: 'report' },
+      { pattern: /(tài chính|financial|finance|kế toán|accounting)/i, topic: 'financial' },
+      { pattern: /(nhân sự|hr|human resource|personnel)/i, topic: 'hr' },
+      { pattern: /(marketing|tiếp thị|quảng cáo|advertising)/i, topic: 'marketing' },
+      { pattern: /(sản xuất|production|manufacturing)/i, topic: 'production' },
+      { pattern: /(công nghệ|technology|it|phần mềm|software)/i, topic: 'technology' },
+      { pattern: /(pháp lý|legal|luật|law)/i, topic: 'legal' }
+    ];
+    
+    // Kiểm tra từng pattern
+    for (const { pattern, topic } of topics) {
+      if (pattern.test(question)) {
+        return topic;
+      }
     }
     
-    // Xác định nguồn dữ liệu dựa trên intent
-    switch (intentAnalysis.intent) {
-      case 'list_documents':
-        return 'documents';
-      
-      case 'list_companies':
-        return 'knowledge';
-      
-      case 'find_knowledge':
-        return 'knowledge';
-      
-      case 'hybrid_search':
-        return 'hybrid';
-      
-      case 'general_question':
-        return 'constraints';
-      
-      default:
-        // Phân tích câu hỏi để xác định nếu cần hybrid search
-        const hybridKeywords = [
-          'tóm tắt', 'summary', 'giải thích', 'explain', 'mô tả', 'describe',
-          'chi tiết', 'detail', 'nội dung', 'content', 'tài liệu nào', 'which document',
-          'hướng dẫn', 'guide', 'instructions'
-        ];
-        
-        const questionLower = question.toLowerCase();
-        const needsHybridSearch = hybridKeywords.some(keyword => questionLower.includes(keyword));
-        
-        return needsHybridSearch ? 'hybrid' : 'documents';
+    return null;
+  }
+
+  /**
+   * Tính toán độ tin cậy của phân tích
+   * @param {string} intent - Intent của câu hỏi
+   * @param {string} source - Nguồn dữ liệu
+   * @param {string|null} topic - Chủ đề
+   * @param {string|null} company - Công ty
+   * @param {string|null} department - Phòng ban
+   * @returns {number} Độ tin cậy (0-100)
+   */
+  calculateConfidence(intent, source, topic, company, department) {
+    let confidence = 50; // Điểm cơ bản
+    
+    // Tăng điểm nếu có intent rõ ràng
+    if (intent && intent !== 'general_question') {
+      confidence += 10;
     }
+    
+    // Tăng điểm nếu có nguồn dữ liệu cụ thể
+    if (source && source !== 'constraints') {
+      confidence += 10;
+    }
+    
+    // Tăng điểm nếu có chủ đề
+    if (topic) {
+      confidence += 10;
+    }
+    
+    // Tăng điểm nếu có công ty
+    if (company) {
+      confidence += 10;
+    }
+    
+    // Tăng điểm nếu có phòng ban
+    if (department) {
+      confidence += 10;
+    }
+    
+    // Đảm bảo confidence không vượt quá 100
+    return Math.min(confidence, 100);
   }
 
   /**
@@ -425,88 +428,64 @@ Chỉ trả về JSON, không giải thích:`;
   }
   
   /**
-   * Phát hiện chủ đề từ câu hỏi
-   * @param {string} question - Câu hỏi cần phân tích
-   * @returns {string|null} Chủ đề hoặc null
+   * Phát hiện công ty từ câu hỏi
+   * @param {string} question - Câu hỏi của người dùng
+   * @returns {string|null} Mã công ty hoặc null nếu không tìm thấy
    */
-  detectTopic(question) {
-    const questionLower = question.toLowerCase();
-    
-    // Từ khóa theo chủ đề
-    const topicKeywords = {
-      'hr': [
-        'nhân sự', 'human resources', 'hr', 'tuyển dụng', 'recruitment',
-        'nghỉ phép', 'leave', 'đào tạo', 'training', 'lương', 'salary',
-        'thưởng', 'bonus', 'phúc lợi', 'benefits', 'nhân viên', 'employee',
-        'đánh giá', 'evaluation', 'kỷ luật', 'discipline', 'văn hóa', 'culture'
-      ],
-      'finance': [
-        'tài chính', 'finance', 'kế toán', 'accounting', 'chi phí', 'expense',
-        'ngân sách', 'budget', 'lương', 'salary', 'thuế', 'tax', 'doanh thu', 'revenue',
-        'báo cáo tài chính', 'financial report', 'chi tiêu', 'spending',
-        'thanh toán', 'payment', 'hóa đơn', 'invoice'
-      ],
-      'legal': [
-        'pháp chế', 'legal', 'luật', 'law', 'hợp đồng', 'contract',
-        'thỏa thuận', 'agreement', 'bản ghi nhớ', 'mou', 'tuân thủ', 'compliance',
-        'tranh chấp', 'dispute', 'kiện tụng', 'litigation', 'sở hữu trí tuệ', 'ip'
-      ],
-      'operations': [
-        'vận hành', 'operations', 'quy trình', 'process', 'sop', 'workflow',
-        'chuỗi cung ứng', 'supply chain', 'logistics', 'vận chuyển', 'shipping',
-        'sản xuất', 'production', 'chất lượng', 'quality', 'bảo trì', 'maintenance'
-      ],
-      'it': [
-        'it', 'công nghệ thông tin', 'cntt', 'phần mềm', 'software',
-        'phần cứng', 'hardware', 'hệ thống', 'system', 'mạng', 'network',
-        'bảo mật', 'security', 'dữ liệu', 'data', 'ứng dụng', 'application'
-      ],
-      'marketing': [
-        'marketing', 'tiếp thị', 'quảng cáo', 'advertising', 'branding', 'thương hiệu',
-        'chiến dịch', 'campaign', 'truyền thông', 'communication', 'pr', 'quảng bá',
-        'khách hàng', 'customer', 'thị trường', 'market', 'seo', 'sem'
-      ],
-      'sales': [
-        'kinh doanh', 'sales', 'bán hàng', 'selling', 'khách hàng', 'customer',
-        'doanh số', 'revenue', 'target', 'mục tiêu', 'commission', 'hoa hồng',
-        'đối tác', 'partner', 'hợp đồng', 'contract', 'b2b', 'b2c'
-      ],
-      'general': [
-        'công ty', 'company', 'tổ chức', 'organization', 'chung', 'general',
-        'nội quy', 'rules', 'quy định', 'regulations', 'chính sách', 'policy'
-      ]
-    };
-    
-    // Phát hiện chủ đề theo từ khóa
-    for (const [topic, keywords] of Object.entries(topicKeywords)) {
-      for (const keyword of keywords) {
-        if (questionLower.includes(keyword)) {
-          return topic;
+  async detectCompany(question) {
+    try {
+      // Danh sách các pattern để nhận diện công ty
+      const companyPatterns = [
+        { pattern: /\b(pdh|phát đạt holdings)\b/i, code: 'PDH' },
+        { pattern: /\b(pdi|phát đạt investment)\b/i, code: 'PDI' },
+        { pattern: /\b(pde|phát đạt energy)\b/i, code: 'PDE' },
+        { pattern: /\b(pdtech|phát đạt tech)\b/i, code: 'PDTECH' },
+        { pattern: /\b(pdtc|phát đạt trading)\b/i, code: 'PDTC' }
+      ];
+      
+      // Kiểm tra từng pattern
+      for (const { pattern, code } of companyPatterns) {
+        if (pattern.test(question)) {
+          console.log(`🏢 Detected company: ${code}`);
+          return code;
         }
       }
-    }
-    
-    // Trích xuất chủ đề từ mã tài liệu (VD: QT-NS-01 -> hr, QT-TC-02 -> finance)
-    const docCodeMatch = question.match(/\b([A-Z]{2,3})-([A-Z]{2,3})-\d+\b/);
-    if (docCodeMatch) {
-      const deptCode = docCodeMatch[2].toUpperCase();
-      const deptMapping = {
-        'NS': 'hr',
-        'TC': 'finance',
-        'PC': 'legal',
-        'VH': 'operations',
-        'IT': 'it',
-        'MKT': 'marketing',
-        'KD': 'sales',
-        'QT': 'general'
-      };
       
-      if (deptMapping[deptCode]) {
-        return deptMapping[deptCode];
+      // Nếu không tìm thấy từ pattern, thử tìm trong database
+      const { pool } = require('../../config/database');
+      const client = await pool.connect();
+      try {
+        // Lấy tất cả công ty từ database
+        const result = await client.query(`
+          SELECT company_code, company_name, short_name
+          FROM companies
+        `);
+        
+        // Chuẩn bị từ khóa tìm kiếm
+        const normalizedQuestion = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        
+        // Kiểm tra từng công ty
+        for (const company of result.rows) {
+          const companyCode = company.company_code.toLowerCase();
+          const companyName = company.company_name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const shortName = company.short_name ? company.short_name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '';
+          
+          if (normalizedQuestion.includes(companyCode.toLowerCase()) || 
+              normalizedQuestion.includes(companyName) || 
+              (shortName && normalizedQuestion.includes(shortName))) {
+            console.log(`🏢 Detected company from database: ${company.company_code}`);
+            return company.company_code;
+          }
+        }
+      } finally {
+        client.release();
       }
+      
+      return null;
+    } catch (error) {
+      console.error('Error detecting company:', error);
+      return null;
     }
-    
-    return null;
   }
 
   /**

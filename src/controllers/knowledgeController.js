@@ -112,35 +112,99 @@ const createKnowledge = async (req, res) => {
       }
     }
     
-    // Tạo knowledge mới
-    const result = await pool.query(
-      `INSERT INTO knowledge_base (
-        question, 
-        answer, 
-        company_id, 
-        keywords, 
-        category, 
-        is_active, 
-        metadata
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [
-        question, 
-        answer, 
-        company_id || null, 
-        keywords || null, 
-        category || null, 
-        is_active !== undefined ? is_active : true,
-        metadata || null
-      ]
-    );
+    // Kiểm tra xem đã có knowledge tương tự chưa
+    const similarQuery = `
+      SELECT * FROM knowledge_base 
+      WHERE 
+        company_id ${company_id ? '= $1' : 'IS NULL'} 
+        AND (
+          similarity(question, $2) > 0.6
+          OR question ILIKE $3
+        )
+    `;
     
-    res.status(201).json({
+    const similarParams = company_id 
+      ? [company_id, question, `%${question.replace(/\s+/g, '%')}%`]
+      : [question, `%${question.replace(/\s+/g, '%')}%`];
+    
+    const similarResult = await pool.query(similarQuery, similarParams);
+    
+    let result;
+    let isUpdate = false;
+    
+    if (similarResult.rows.length > 0) {
+      // Nếu có knowledge tương tự, cập nhật thay vì tạo mới
+      const existingKnowledge = similarResult.rows[0];
+      console.log(`🔄 Found similar knowledge: "${existingKnowledge.question}" (ID: ${existingKnowledge.id})`);
+      
+      // Lưu phiên bản cũ vào metadata.history
+      const history = existingKnowledge.metadata?.history || [];
+      history.push({
+        previous_question: existingKnowledge.question,
+        previous_answer: existingKnowledge.answer,
+        updated_at: new Date().toISOString()
+      });
+      
+      const updatedMetadata = {
+        ...(existingKnowledge.metadata || {}),
+        history,
+        last_updated: new Date().toISOString()
+      };
+      
+      // Cập nhật knowledge
+      result = await pool.query(
+        `UPDATE knowledge_base SET
+          question = $1,
+          answer = $2,
+          keywords = $3,
+          category = $4,
+          is_active = $5,
+          metadata = $6,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $7 RETURNING *`,
+        [
+          question,
+          answer,
+          keywords || existingKnowledge.keywords,
+          category || existingKnowledge.category,
+          is_active !== undefined ? is_active : existingKnowledge.is_active,
+          updatedMetadata,
+          existingKnowledge.id
+        ]
+      );
+      
+      isUpdate = true;
+    } else {
+      // Tạo knowledge mới nếu không có tương tự
+      result = await pool.query(
+        `INSERT INTO knowledge_base (
+          question, 
+          answer, 
+          company_id, 
+          keywords, 
+          category, 
+          is_active, 
+          metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [
+          question, 
+          answer, 
+          company_id || null, 
+          keywords || null, 
+          category || null, 
+          is_active !== undefined ? is_active : true,
+          metadata || null
+        ]
+      );
+    }
+    
+    res.status(isUpdate ? 200 : 201).json({
       success: true,
-      message: 'Knowledge created successfully',
+      message: isUpdate ? 'Knowledge updated successfully' : 'Knowledge created successfully',
       data: result.rows[0]
     });
   } catch (error) {
-    console.error('Error creating knowledge:', error);
+    console.error('Error creating/updating knowledge:', error);
     res.status(500).json({
       success: false,
       error: error.message
