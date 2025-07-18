@@ -434,54 +434,71 @@ Chỉ trả về JSON, không giải thích:`;
    */
   async detectCompany(question) {
     try {
-      // Danh sách các pattern để nhận diện công ty
-      const companyPatterns = [
-        { pattern: /\b(pdh|phát đạt holdings)\b/i, code: 'PDH' },
-        { pattern: /\b(pdi|phát đạt investment)\b/i, code: 'PDI' },
-        { pattern: /\b(pde|phát đạt energy)\b/i, code: 'PDE' },
-        { pattern: /\b(pdtech|phát đạt tech)\b/i, code: 'PDTECH' },
-        { pattern: /\b(pdtc|phát đạt trading)\b/i, code: 'PDTC' }
-      ];
-      
-      // Kiểm tra từng pattern
-      for (const { pattern, code } of companyPatterns) {
-        if (pattern.test(question)) {
-          console.log(`🏢 Detected company: ${code}`);
-          return code;
-        }
-      }
-      
-      // Nếu không tìm thấy từ pattern, thử tìm trong database
+      // Lấy tất cả công ty từ database
       const { pool } = require('../../config/database');
       const client = await pool.connect();
       try {
         // Lấy tất cả công ty từ database
         const result = await client.query(`
-          SELECT company_code, company_name, short_name
+          SELECT company_code, company_name, short_name, description
           FROM companies
         `);
+        
+        if (result.rows.length === 0) {
+          console.log('⚠️ Không tìm thấy công ty nào trong database');
+          return null;
+        }
         
         // Chuẩn bị từ khóa tìm kiếm
         const normalizedQuestion = question.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         
-        // Kiểm tra từng công ty
+        // Tạo danh sách các mẫu tìm kiếm từ dữ liệu công ty
+        const companyPatterns = [];
+        
+        for (const company of result.rows) {
+          // Tạo pattern từ mã công ty
+          const codePattern = new RegExp(`\\b${company.company_code.toLowerCase()}\\b`, 'i');
+          companyPatterns.push({ pattern: codePattern, code: company.company_code });
+          
+          // Tạo pattern từ tên công ty
+          if (company.company_name) {
+            const namePattern = new RegExp(`\\b${company.company_name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")}\\b`, 'i');
+            companyPatterns.push({ pattern: namePattern, code: company.company_code });
+          }
+          
+          // Tạo pattern từ tên viết tắt
+          if (company.short_name) {
+            const shortNamePattern = new RegExp(`\\b${company.short_name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")}\\b`, 'i');
+            companyPatterns.push({ pattern: shortNamePattern, code: company.company_code });
+          }
+        }
+        
+        // Kiểm tra từng pattern
+        for (const { pattern, code } of companyPatterns) {
+          if (pattern.test(normalizedQuestion)) {
+            console.log(`🏢 Detected company: ${code}`);
+            return code;
+          }
+        }
+        
+        // Nếu không tìm thấy bằng pattern, thử tìm kiếm từng phần
         for (const company of result.rows) {
           const companyCode = company.company_code.toLowerCase();
-          const companyName = company.company_name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+          const companyName = company.company_name ? company.company_name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '';
           const shortName = company.short_name ? company.short_name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : '';
           
           if (normalizedQuestion.includes(companyCode.toLowerCase()) || 
-              normalizedQuestion.includes(companyName) || 
+              (companyName && normalizedQuestion.includes(companyName)) || 
               (shortName && normalizedQuestion.includes(shortName))) {
-            console.log(`🏢 Detected company from database: ${company.company_code}`);
+            console.log(`🏢 Detected company from partial match: ${company.company_code}`);
             return company.company_code;
           }
         }
+        
+        return null;
       } finally {
         client.release();
       }
-      
-      return null;
     } catch (error) {
       console.error('Error detecting company:', error);
       return null;

@@ -126,20 +126,39 @@ class ConversationService {
         ]
       );
 
-      // Update session context with latest relevant documents
-      if (relevantDocuments.length > 0) {
-        await pool.query(
-          'UPDATE conversations SET context = $1, last_activity = NOW() WHERE session_id = $2',
-          [JSON.stringify({ lastRelevantDocuments: relevantDocuments }), sessionId]
-        );
-      } else {
-        // Update just the last_activity even if no documents
-        await pool.query(
-          'UPDATE conversations SET last_activity = NOW() WHERE session_id = $1',
-          [sessionId]
-        );
+      // Update session context with latest relevant documents and metadata
+      const currentContext = session.context || {};
+      let updatedContext = { ...currentContext };
+      
+      // Lưu tài liệu liên quan vào context
+      if (relevantDocuments && relevantDocuments.length > 0) {
+        updatedContext.lastRelevantDocuments = relevantDocuments;
       }
-
+      
+      // Lưu metadata vào context
+      if (metadata) {
+        // Nếu là câu trả lời, lưu thông tin phân tích
+        if (messageType === 'answer' && metadata.analysisResult) {
+          updatedContext.lastAnalysisResult = metadata.analysisResult;
+        }
+        
+        // Nếu có intent list_documents, lưu thông tin
+        if (metadata.analysisResult && metadata.analysisResult.intent === 'list_documents') {
+          updatedContext.lastIntent = 'list_documents';
+        }
+        
+        // Lưu câu hỏi gốc
+        if (messageType === 'question') {
+          updatedContext.lastQuestion = content;
+        }
+      }
+      
+      // Cập nhật context và last_activity
+      await pool.query(
+        'UPDATE conversations SET context = $1, last_activity = NOW() WHERE session_id = $2',
+        [JSON.stringify(updatedContext), sessionId]
+      );
+      
       console.log(`💬 Saved ${messageType} to session ${sessionId}: ${result.rows[0].id}`);
       return result.rows[0];
     } catch (error) {
@@ -239,6 +258,93 @@ class ConversationService {
         return { resolvedQuestion: question, hasReference: false };
       }
       
+      // Kiểm tra các từ khóa tham chiếu phổ biến
+      const referenceKeywords = [
+        'tài liệu đó', 'tài liệu này', 'file đó', 'file này', 
+        'quy định đó', 'quy định này', 'quy trình đó', 'quy trình này',
+        'nó', 'đó', 'này', 'chi tiết hơn', 'nói thêm', 'giải thích thêm',
+        'cho tôi biết', 'cho tôi xem', 'thông tin về', 'thông tin của'
+      ];
+      
+      // Kiểm tra nếu câu hỏi chứa từ khóa tham chiếu
+      const questionLower = question.toLowerCase();
+      const hasReferenceKeyword = referenceKeywords.some(keyword => questionLower.includes(keyword));
+      
+      // Nếu câu hỏi quá ngắn hoặc có từ khóa tham chiếu rõ ràng
+      const isShortQuestion = question.split(' ').length <= 5;
+      const likelyHasReference = hasReferenceKeyword || isShortQuestion;
+      
+      if (likelyHasReference) {
+        // Lấy thông tin từ câu trả lời gần nhất có tài liệu liên quan
+        let referencedDocuments = [];
+        let previousContext = null;
+        
+        // Tìm tin nhắn gần nhất có tài liệu liên quan
+        for (const message of history.slice().reverse()) {
+          if (message.message_type === 'answer' && message.relevant_documents && message.relevant_documents.length > 0) {
+            referencedDocuments = message.relevant_documents;
+            
+            // Lấy thêm ngữ cảnh từ metadata nếu có
+            if (message.metadata) {
+              try {
+                const metadata = typeof message.metadata === 'string' ? JSON.parse(message.metadata) : message.metadata;
+                previousContext = metadata.contextInfo || metadata.analysisResult;
+              } catch (e) {
+                console.error('Error parsing message metadata:', e);
+              }
+            }
+            
+            break;
+          }
+        }
+        
+        // Nếu có tài liệu liên quan
+        if (referencedDocuments.length > 0) {
+          // Nếu là câu hỏi về tài liệu cụ thể
+          if (questionLower.includes('tài liệu') || questionLower.includes('file') || 
+              questionLower.includes('quy định') || questionLower.includes('quy trình')) {
+            
+            // Sử dụng tài liệu đầu tiên
+            const doc = referencedDocuments[0];
+            const resolvedQuestion = `thông tin về tài liệu "${doc.name}": ${question}`;
+            
+            console.log(`🔗 Phát hiện tham chiếu đến tài liệu: ${doc.name}`);
+            console.log(`🔗 Câu hỏi đã giải quyết tham chiếu: ${resolvedQuestion}`);
+            
+            return {
+              resolvedQuestion,
+              hasReference: true,
+              referencedDocuments: [doc],
+              previousContext,
+              analysis: {
+                confidence: 85,
+                explanation: `Câu hỏi tham chiếu đến tài liệu "${doc.name}" từ hội thoại trước`
+              }
+            };
+          }
+          // Nếu là câu hỏi chung về chủ đề
+          else {
+            // Sử dụng tài liệu đầu tiên
+            const doc = referencedDocuments[0];
+            const resolvedQuestion = `${question} trong tài liệu "${doc.name}"`;
+            
+            console.log(`🔗 Phát hiện tham chiếu ngầm đến chủ đề: ${doc.name}`);
+            console.log(`🔗 Câu hỏi đã giải quyết tham chiếu: ${resolvedQuestion}`);
+            
+            return {
+              resolvedQuestion,
+              hasReference: true,
+              referencedDocuments: [doc],
+              previousContext,
+              analysis: {
+                confidence: 75,
+                explanation: `Câu hỏi có thể tham chiếu đến chủ đề "${doc.name}" từ hội thoại trước`
+              }
+            };
+          }
+        }
+      }
+      
       // Sử dụng GeminiAiService để phân tích tham chiếu
       const GeminiAiService = require('../ai/geminiAiService');
       const aiService = new GeminiAiService();
@@ -254,7 +360,7 @@ class ConversationService {
           analysis: {
             confidence: analysis.confidence,
             explanation: analysis.explanation
-                  }
+          }
         };
       }
       
@@ -305,7 +411,7 @@ class ConversationService {
             explanation: analysis.explanation
           }
         };
-        }
+      }
         
       // Nếu chỉ có một tài liệu, sử dụng nó
       if (referencedDocuments.length === 1) {

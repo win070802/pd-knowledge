@@ -252,34 +252,111 @@ class DataIntegrationService {
   async fetchDocuments(question, analysis) {
     try {
       // Xử lý đặc biệt cho câu hỏi danh sách tài liệu theo công ty
-      if (analysis.intent === 'list_documents' && analysis.company) {
-        console.log(`📑 Fetching document list for company: ${analysis.company}`);
+      if (analysis.intent === 'list_documents') {
+        console.log(`📑 Fetching document list for intent: list_documents`);
         const { pool } = require('../../config/database');
         const client = await pool.connect();
+        
         try {
-          // Trước tiên lấy thông tin công ty
-          const companyResult = await client.query(`
-            SELECT * FROM companies 
-            WHERE UPPER(company_code) = UPPER($1)
-          `, [analysis.company]);
-          
-          if (companyResult.rows.length === 0) {
-            console.log(`⚠️ Company with code "${analysis.company}" not found`);
-            return [];
+          // Kiểm tra nếu câu hỏi yêu cầu tất cả tài liệu của tập đoàn
+          const isAllCompaniesRequest = 
+            question.toLowerCase().includes('tất cả') || 
+            question.toLowerCase().includes('toàn bộ') ||
+            question.toLowerCase().includes('tập đoàn') ||
+            question.toLowerCase().includes('mọi công ty') ||
+            question.toLowerCase().includes('các công ty');
+            
+          // Nếu là yêu cầu tất cả tài liệu của tập đoàn
+          if (isAllCompaniesRequest) {
+            console.log(`📑 Fetching documents for all companies`);
+            
+            // Lấy tất cả tài liệu và thông tin công ty
+            const result = await client.query(`
+              SELECT d.*, c.company_code as company_code, c.company_name as company_name 
+              FROM document_metadata d 
+              JOIN companies c ON d.company_id = c.id 
+              ORDER BY c.company_name, d.date_created DESC
+            `);
+            
+            return result.rows;
           }
-          
-          const company = companyResult.rows[0];
-          
-          // Sau đó lấy tài liệu của công ty đó
-          const result = await client.query(`
-            SELECT d.*, c.company_code as company_code, c.company_name as company_name 
-            FROM document_metadata d 
-            JOIN companies c ON d.company_id = c.id 
-            WHERE c.id = $1 
-            ORDER BY d.date_created DESC
-          `, [company.id]);
-          
-          return result.rows;
+          // Nếu có công ty cụ thể
+          else if (analysis.company) {
+            console.log(`📑 Fetching document list for company: ${analysis.company}`);
+            
+            // Trước tiên lấy thông tin công ty
+            const companyResult = await client.query(`
+              SELECT * FROM companies 
+              WHERE UPPER(company_code) = UPPER($1)
+            `, [analysis.company]);
+            
+            if (companyResult.rows.length === 0) {
+              console.log(`⚠️ Company with code "${analysis.company}" not found`);
+              return [];
+            }
+            
+            const company = companyResult.rows[0];
+            
+            // Sau đó lấy tài liệu của công ty đó
+            const result = await client.query(`
+              SELECT d.*, c.company_code as company_code, c.company_name as company_name 
+              FROM document_metadata d 
+              JOIN companies c ON d.company_id = c.id 
+              WHERE c.id = $1 
+              ORDER BY d.date_created DESC
+            `, [company.id]);
+            
+            return result.rows;
+          }
+          // Nếu không có công ty cụ thể và không phải yêu cầu tất cả
+          else {
+            // Thử tìm công ty từ ngữ cảnh câu hỏi
+            const questionLower = question.toLowerCase();
+            const companyResult = await client.query(`SELECT * FROM companies`);
+            let detectedCompany = null;
+            
+            // Tìm công ty từ câu hỏi
+            for (const company of companyResult.rows) {
+              if (company.company_name && questionLower.includes(company.company_name.toLowerCase())) {
+                detectedCompany = company;
+                break;
+              }
+              
+              if (company.company_code && questionLower.includes(company.company_code.toLowerCase())) {
+                detectedCompany = company;
+                break;
+              }
+            }
+            
+            // Nếu tìm thấy công ty
+            if (detectedCompany) {
+              console.log(`📑 Detected company from question: ${detectedCompany.company_code}`);
+              
+              const result = await client.query(`
+                SELECT d.*, c.company_code as company_code, c.company_name as company_name 
+                FROM document_metadata d 
+                JOIN companies c ON d.company_id = c.id 
+                WHERE c.id = $1 
+                ORDER BY d.date_created DESC
+              `, [detectedCompany.id]);
+              
+              return result.rows;
+            }
+            // Mặc định lấy tất cả tài liệu
+            else {
+              console.log(`📑 No specific company detected, fetching all documents`);
+              
+              const result = await client.query(`
+                SELECT d.*, c.company_code as company_code, c.company_name as company_name 
+                FROM document_metadata d 
+                JOIN companies c ON d.company_id = c.id 
+                ORDER BY d.date_created DESC
+                LIMIT 20
+              `);
+              
+              return result.rows;
+            }
+          }
         } finally {
           client.release();
         }
@@ -687,31 +764,82 @@ class DataIntegrationService {
     
     // Xử lý đặc biệt cho câu hỏi danh sách tài liệu theo công ty
     if (analysis.intent === 'list_documents' && result.documents.length >= 0) {
-      // Lấy tên công ty từ thông tin công ty hoặc từ tài liệu
-      let companyName = "không xác định";
+      // Kiểm tra xem là yêu cầu tất cả tài liệu hay chỉ của một công ty
+      const isAllCompaniesRequest = 
+        analysis.company === null && 
+        (result.documents.length > 0 && result.documents.some(doc => doc.company_code !== result.documents[0].company_code));
       
-      if (result.companyInfo) {
-        companyName = result.companyInfo.company_name;
-      } else if (result.documents.length > 0 && result.documents[0].company_name) {
-        companyName = result.documents[0].company_name;
-      } else if (analysis.company) {
-        companyName = analysis.company;
-      }
-      
-      if (result.documents.length > 0) {
-        const documentList = result.documents.map((doc, index) => 
-          `${index + 1}. ${doc.dc_title || doc.original_name || 'Tài liệu không tên'} (${doc.dc_type || doc.category || 'Chưa phân loại'})`
-        ).join('\n');
+      if (isAllCompaniesRequest) {
+        // Nhóm tài liệu theo công ty
+        const documentsByCompany = {};
         
-        result.constraint = {
-          answer: `Danh sách tài liệu thuộc ${companyName}:\n\n${documentList}`,
-          confidence: 100
-        };
+        for (const doc of result.documents) {
+          const companyCode = doc.company_code || 'unknown';
+          const companyName = doc.company_name || 'Không xác định';
+          
+          if (!documentsByCompany[companyCode]) {
+            documentsByCompany[companyCode] = {
+              name: companyName,
+              documents: []
+            };
+          }
+          
+          documentsByCompany[companyCode].documents.push(doc);
+        }
+        
+        // Tạo danh sách tài liệu theo công ty
+        if (Object.keys(documentsByCompany).length > 0) {
+          let documentList = '';
+          
+          for (const [companyCode, company] of Object.entries(documentsByCompany)) {
+            documentList += `\n\n## ${company.name} (${companyCode})\n`;
+            
+            if (company.documents.length > 0) {
+              company.documents.forEach((doc, index) => {
+                documentList += `${index + 1}. ${doc.dc_title || doc.original_name || 'Tài liệu không tên'} (${doc.dc_type || doc.category || 'Chưa phân loại'})\n`;
+              });
+            } else {
+              documentList += `Không có tài liệu\n`;
+            }
+          }
+          
+          result.constraint = {
+            answer: `Danh sách tài liệu của tất cả công ty trong tập đoàn:${documentList}`,
+            confidence: 100
+          };
+        } else {
+          result.constraint = {
+            answer: `Hiện tại chưa có tài liệu nào được upload cho các công ty trong tập đoàn. Vui lòng upload tài liệu để có thể trả lời câu hỏi này.`,
+            confidence: 100
+          };
+        }
       } else {
-        result.constraint = {
-          answer: `Hiện tại chưa có tài liệu nào được upload cho ${companyName}. Vui lòng upload tài liệu để có thể trả lời câu hỏi này.`,
-          confidence: 100
-        };
+        // Lấy tên công ty từ thông tin công ty hoặc từ tài liệu
+        let companyName = "không xác định";
+        
+        if (result.companyInfo) {
+          companyName = result.companyInfo.company_name;
+        } else if (result.documents.length > 0 && result.documents[0].company_name) {
+          companyName = result.documents[0].company_name;
+        } else if (analysis.company) {
+          companyName = analysis.company;
+        }
+        
+        if (result.documents.length > 0) {
+          const documentList = result.documents.map((doc, index) => 
+            `${index + 1}. ${doc.dc_title || doc.original_name || 'Tài liệu không tên'} (${doc.dc_type || doc.category || 'Chưa phân loại'})`
+          ).join('\n');
+          
+          result.constraint = {
+            answer: `Danh sách tài liệu thuộc ${companyName}:\n\n${documentList}`,
+            confidence: 100
+          };
+        } else {
+          result.constraint = {
+            answer: `Hiện tại chưa có tài liệu nào được upload cho ${companyName}. Vui lòng upload tài liệu để có thể trả lời câu hỏi này.`,
+            confidence: 100
+          };
+        }
       }
     }
     

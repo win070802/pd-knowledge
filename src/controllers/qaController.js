@@ -130,7 +130,19 @@ const askQuestion = async (req, res) => {
     if (questionAnalysis.intent === 'list_documents' && integratedData.documents && integratedData.documents.length > 0) {
       // Lưu mảng id tài liệu vào context
       const documentIdList = integratedData.documents.map(doc => doc.id);
-      await conversationService.updateSessionContext(actualSessionId, { lastDocumentList: documentIdList });
+      const documentNames = integratedData.documents.map(doc => ({
+        id: doc.id,
+        name: doc.dc_title || doc.original_name || 'Tài liệu không tên',
+        type: doc.dc_type || doc.category || 'Chưa phân loại'
+      }));
+      
+      await conversationService.updateSessionContext(actualSessionId, { 
+        lastDocumentList: documentIdList,
+        lastDocuments: documentNames,
+        lastIntent: 'list_documents'
+      });
+      
+      console.log(`📝 Saved ${documentIdList.length} documents to session context`);
     }
     
     // Xử lý câu hỏi với dữ liệu đã hợp nhất
@@ -173,8 +185,27 @@ const askQuestion = async (req, res) => {
       hasReference: referenceResolution.hasReference,
       analysisResult: questionAnalysis,
       dataSources: integratedData.metadata?.sources || [],
-      referenceAnalysis: referenceResolution.analysis || {}
+      referenceAnalysis: referenceResolution.analysis || {},
+      documents: integratedData.documents || [],
+      contextInfo: {
+        hasReference: referenceResolution.hasReference,
+        resolved: referenceResolution.hasReference && !referenceResolution.error,
+        referencedDocuments: referenceResolution.referencedDocuments || [],
+        analysisResult: questionAnalysis,
+        dataSources: integratedData.metadata?.sources || [],
+        referenceAnalysis: referenceResolution.analysis || {}
+      }
     };
+
+    // Lưu thông tin tài liệu liên quan vào session context
+    if (result.relevantDocuments && result.relevantDocuments.length > 0) {
+      await conversationService.updateSessionContext(actualSessionId, { 
+        lastRelevantDocuments: result.relevantDocuments,
+        lastQuestion: question.trim()
+      });
+      
+      console.log(`📝 Saved ${result.relevantDocuments.length} relevant documents to session context`);
+    }
 
     // Xử lý tìm kiếm tài liệu liên quan đến tóm tắt nếu có
     const documentSummaryRequest = processQuestion.toLowerCase().includes('tóm tắt') && 
@@ -263,13 +294,30 @@ ${result.answer}`;
       }
     }
 
-    // Save the answer to conversation history
-    await conversationService.saveMessage(
-      actualSessionId, 
-      'answer', 
-      result.answer, 
+    // Lưu câu trả lời vào lịch sử hội thoại
+    const savedAnswer = await conversationService.saveMessage(
+      actualSessionId,
+      'answer',
+      result.answer,
       result.relevantDocuments || [],
-      metadata
+      {
+        responseTime: result.responseTime || (Date.now() - startTime),
+        originalQuestion: question.trim(),
+        resolvedQuestion: processQuestion,
+        hasReference: referenceResolution.hasReference,
+        analysisResult: questionAnalysis,
+        dataSources: integratedData.metadata?.sources || [],
+        referenceAnalysis: referenceResolution.analysis || {},
+        documents: integratedData.documents || [],
+        contextInfo: {
+          hasReference: referenceResolution.hasReference,
+          resolved: referenceResolution.hasReference && !referenceResolution.error,
+          referencedDocuments: referenceResolution.referencedDocuments || [],
+          analysisResult: questionAnalysis,
+          dataSources: integratedData.metadata?.sources || [],
+          referenceAnalysis: referenceResolution.analysis || {}
+        }
+      }
     );
 
     // Nếu là intent document_by_index và có documentId, trả về chi tiết tài liệu
